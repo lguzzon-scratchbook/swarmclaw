@@ -436,17 +436,21 @@ export async function finalizeChatTurn(params: {
       }
     }
 
-    persistField('claudeSessionId', session.claudeSessionId)
-    persistField('codexThreadId', session.codexThreadId)
-    persistField('opencodeSessionId', session.opencodeSessionId)
-    persistField('geminiSessionId', session.geminiSessionId)
-    persistField('copilotSessionId', session.copilotSessionId)
-    persistField('droidSessionId', session.droidSessionId)
-    persistField('cursorSessionId', session.cursorSessionId)
-    persistField('qwenSessionId', session.qwenSessionId)
-    persistField('acpSessionId', session.acpSessionId)
+    // Provider handlers receive `sessionForRun` and may mutate CLI resume IDs there.
+    // Persist from run-session first, with fallback to the original session object.
+    persistField('claudeSessionId', sessionForRun.claudeSessionId ?? session.claudeSessionId)
+    persistField('codexThreadId', sessionForRun.codexThreadId ?? session.codexThreadId)
+    persistField('opencodeSessionId', sessionForRun.opencodeSessionId ?? session.opencodeSessionId)
+    persistField('geminiSessionId', sessionForRun.geminiSessionId ?? session.geminiSessionId)
+    persistField('copilotSessionId', sessionForRun.copilotSessionId ?? session.copilotSessionId)
+    persistField('droidSessionId', sessionForRun.droidSessionId ?? session.droidSessionId)
+    persistField('cursorSessionId', sessionForRun.cursorSessionId ?? session.cursorSessionId)
+    persistField('qwenSessionId', sessionForRun.qwenSessionId ?? session.qwenSessionId)
+    persistField('acpSessionId', sessionForRun.acpSessionId ?? session.acpSessionId)
 
-    const sourceResume = session.delegateResumeIds
+    const sourceResume = (sessionForRun.delegateResumeIds && typeof sessionForRun.delegateResumeIds === 'object')
+      ? sessionForRun.delegateResumeIds
+      : session.delegateResumeIds
     if (sourceResume && typeof sourceResume === 'object') {
       const currentResume = (current.delegateResumeIds && typeof current.delegateResumeIds === 'object')
         ? current.delegateResumeIds

@@ -4,9 +4,9 @@ import { DEFAULT_HEARTBEAT_INTERVAL_SEC } from '@/lib/runtime/heartbeat-defaults
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Agent, MemoryEntry, Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
+import { selectActiveSessionId } from '@/stores/slices/session-slice'
 import { useChatStore } from '@/stores/use-chat-store'
 import { api } from '@/lib/app/api-client'
-import { sortSessionsNewestFirst } from '@/lib/chat/new-session'
 import { AgentAvatar } from './agent-avatar'
 import { AgentFilesEditor } from './agent-files-editor'
 import { OpenClawSkillsPanel } from './openclaw-skills-panel'
@@ -901,6 +901,7 @@ function QuickActionsSection({ agent, session }: { agent: Agent; session: Sessio
 
 function SessionsSection({ agent }: { agent: Agent }) {
   const sessions = useAppStore((s) => s.sessions)
+  const activeSessionId = useAppStore(selectActiveSessionId)
   const connectors = useAppStore((s) => s.connectors)
   const agents = useAppStore((s) => s.agents)
   const setCurrentAgent = useAppStore((s) => s.setCurrentAgent)
@@ -908,7 +909,19 @@ function SessionsSection({ agent }: { agent: Agent }) {
   const setInspectorOpen = useAppStore((s) => s.setInspectorOpen)
 
   const agentSessions = useMemo(() => {
-    return sortSessionsNewestFirst(Object.values(sessions).filter((s) => s.agentId === agent.id))
+    const getLastMessageTime = (session: Session): number => {
+      const summaryTime = session.lastMessageSummary?.time
+      if (typeof summaryTime === 'number' && Number.isFinite(summaryTime)) return summaryTime
+      if (Array.isArray(session.messages) && session.messages.length > 0) {
+        const last = session.messages[session.messages.length - 1]
+        if (typeof last?.time === 'number' && Number.isFinite(last.time)) return last.time
+      }
+      return session.lastActiveAt || session.createdAt || 0
+    }
+
+    return Object.values(sessions)
+      .filter((s) => s.agentId === agent.id)
+      .sort((left, right) => getLastMessageTime(right) - getLastMessageTime(left))
   }, [sessions, agent.id])
 
   if (agentSessions.length === 0) return null
@@ -918,6 +931,7 @@ function SessionsSection({ agent }: { agent: Agent }) {
       <SectionLabel>Sessions ({agentSessions.length})</SectionLabel>
       <div className="flex flex-col gap-1.5">
         {agentSessions.map((s) => {
+          const isSelected = s.id === activeSessionId
           const connector = getSessionConnector(s, connectors)
           const delegatedByAgentId = (s as unknown as Record<string, unknown>).delegatedByAgentId as string | undefined
           const delegatedBy = delegatedByAgentId ? agents[delegatedByAgentId] : null
@@ -934,7 +948,10 @@ function SessionsSection({ agent }: { agent: Agent }) {
                   }
                 }).catch(() => {})
               }}
-              className="flex items-center gap-2 w-full py-1.5 px-2 rounded-[8px] bg-transparent border-none cursor-pointer hover:bg-white/[0.04] transition-colors text-left"
+              className={`flex items-center gap-2 w-full py-1.5 px-2 rounded-[8px] border-none cursor-pointer transition-colors text-left
+                ${isSelected
+                  ? 'bg-accent-soft/70 ring-1 ring-accent-bright/25'
+                  : 'bg-transparent hover:bg-white/[0.04]'}`}
             >
               {connector ? (
                 <ConnectorPlatformIcon platform={connector.platform} size={14} />
@@ -944,6 +961,11 @@ function SessionsSection({ agent }: { agent: Agent }) {
                 </svg>
               )}
               <span className="text-[12px] text-text-2 truncate flex-1">{s.name}</span>
+              {isSelected && (
+                <span className="text-[9px] font-700 uppercase tracking-[0.08em] text-accent-bright bg-accent-bright/15 px-1.5 py-0.5 rounded-[6px] shrink-0">
+                  Selected
+                </span>
+              )}
               {delegatedBy && (
                 <span className="text-[9px] text-amber-300/60 font-600 shrink-0">from {delegatedBy.name}</span>
               )}

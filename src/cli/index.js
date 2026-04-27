@@ -1001,8 +1001,14 @@ function resolveAccessKey(opts, env, cwd) {
   const envKey = env.SWARMCLAW_API_KEY || env.SC_ACCESS_KEY || env.SWARMCLAW_ACCESS_KEY || ''
   if (envKey) return String(envKey).trim()
 
-  const keyFile = path.join(cwd, 'platform-api-key.txt')
-  if (fs.existsSync(keyFile)) {
+  const keyLocations = [
+    path.join(cwd, 'platform-api-key.txt'),
+  ]
+  const homeDir = String(env.SWARMCLAW_HOME || '').trim()
+  if (homeDir) keyLocations.push(path.join(homeDir, 'platform-api-key.txt'))
+
+  for (const keyFile of keyLocations) {
+    if (!fs.existsSync(keyFile)) continue
     const content = fs.readFileSync(keyFile, 'utf8').trim()
     if (content) return content
   }
