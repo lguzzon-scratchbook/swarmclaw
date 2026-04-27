@@ -14,6 +14,48 @@ function SnapshotItem({ label, value, hint }: { label: string; value: string; hi
   )
 }
 
+function PathCard({
+  kicker,
+  title,
+  description,
+  primaryLabel,
+  secondaryLabel,
+  onPrimary,
+  onSecondary,
+}: {
+  kicker: string
+  title: string
+  description: string
+  primaryLabel: string
+  secondaryLabel: string
+  onPrimary: () => void
+  onSecondary: () => void
+}) {
+  return (
+    <div className="flex min-h-[220px] flex-col rounded-[18px] border border-white/[0.07] bg-white/[0.03] p-5">
+      <div className="text-[11px] font-700 uppercase tracking-[0.12em] text-text-3/55">{kicker}</div>
+      <div className="mt-3 text-[18px] font-display font-700 tracking-normal text-text">{title}</div>
+      <p className="mt-2 flex-1 text-[13px] leading-relaxed text-text-3/72">{description}</p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onPrimary}
+          className="rounded-[10px] bg-accent-bright px-3.5 py-2 text-[12px] font-display font-700 text-black transition-opacity hover:opacity-90"
+        >
+          {primaryLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onSecondary}
+          className="rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-[12px] font-display font-700 text-text-2 transition-colors hover:bg-white/[0.08]"
+        >
+          {secondaryLabel}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 type Props = {
   firstAgent: Agent | null
   agentCount: number
@@ -53,17 +95,17 @@ export function HomeLaunchpad({
 }: Props) {
   return (
     <div className="max-w-[980px] mx-auto px-6 py-10">
-      <div className="rounded-[24px] border border-white/[0.06] bg-gradient-to-br from-white/[0.05] via-white/[0.02] to-transparent p-6">
+      <div className="rounded-[20px] border border-white/[0.06] bg-white/[0.025] p-6">
         <div className="inline-flex rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] font-700 uppercase tracking-[0.16em] text-text-3/70">
-          Launchpad
+          v1.6 Launchpad
         </div>
         <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-[620px]">
-            <h1 className="font-display text-[34px] font-700 tracking-[-0.03em] text-text">
-              Start with the result you want, not the control plane.
+            <h1 className="font-display text-[34px] font-700 tracking-normal text-text">
+              Pick a path and watch the workspace move.
             </h1>
             <p className="mt-3 text-[15px] leading-relaxed text-text-3/72">
-              SwarmClaw already has the building blocks. Use this workspace to start a live agent chat, launch a bounded session, wire a connector, or move straight into reusable workflows.
+              Start with a local assistant, a reusable workflow, or a budgeted autonomous mission. The rest of the control plane stays one click away.
             </p>
           </div>
           <div className="rounded-[18px] border border-white/[0.06] bg-white/[0.03] p-4 min-w-[240px]">
@@ -92,6 +134,36 @@ export function HomeLaunchpad({
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-6 grid gap-3 lg:grid-cols-3">
+        <PathCard
+          kicker="Self-hosted assistant"
+          title={firstAgent ? `Work with ${firstAgent.name}` : 'Create the first agent'}
+          description="Open a live agent chat, then add memory, local tools, provider routing, or connector access as the work demands."
+          primaryLabel={firstAgent ? 'Open Chat' : 'Open Agents'}
+          secondaryLabel="Connect Platform"
+          onPrimary={onOpenFirstAgent}
+          onSecondary={onOpenConnectors}
+        />
+        <PathCard
+          kicker="Visual workflow"
+          title="Shape a reusable run"
+          description="Use protocol templates and the builder to turn review, research, planning, or release checks into durable workflows."
+          primaryLabel="Open Builder"
+          secondaryLabel="Use Templates"
+          onPrimary={onOpenBuilder}
+          onSecondary={onOpenProtocols}
+        />
+        <PathCard
+          kicker="Autonomous mission"
+          title="Run with budgets"
+          description="Start a mission template for release QA, research, support triage, cost audit, or failed-run review with reports and caps."
+          primaryLabel="Open Missions"
+          secondaryLabel="Quality Center"
+          onPrimary={onStartReleaseQaMission}
+          onSecondary={onRunEvalSuite}
+        />
       </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">

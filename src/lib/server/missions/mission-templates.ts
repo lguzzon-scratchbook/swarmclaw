@@ -304,6 +304,75 @@ export const BUILT_IN_MISSION_TEMPLATES: MissionTemplate[] = [
     },
   },
   {
+    id: 'codebase-review-sprint',
+    name: 'Codebase Review Sprint',
+    description:
+      'Inspect a repository for user-facing bugs, fragile flows, missing tests, and release-readiness risks.',
+    icon: '🧪',
+    category: 'productivity',
+    tags: ['codebase', 'review', 'release', 'quality'],
+    setupNote:
+      'Set the repository path and risk areas in the goal. Keep code edits disabled unless the mission is explicitly converted into implementation work.',
+    defaults: {
+      title: 'Codebase Review Sprint',
+      goal:
+        'Review the current codebase for release-readiness. Inspect tests, build scripts, recent failure-prone flows, user-facing onboarding, desktop/package notes, and high-risk runtime paths. Produce a prioritized markdown report with bugs, missing tests, quick wins, and deferred risks. Do not edit files unless explicitly approved.',
+      successCriteria: [
+        'At least 5 concrete risks or no-finding checks are documented with file or workflow evidence',
+        'Recommended fixes are prioritized by user impact and implementation effort',
+        'The report separates release blockers from follow-up improvements',
+      ],
+      budget: budget({ maxUsd: 2, maxTokens: 140_000, maxTurns: 140, maxWallclockSec: DAY }),
+      reportSchedule: report(6 * HOUR),
+    },
+  },
+  {
+    id: 'research-bureau-scan',
+    name: 'Research Bureau Scan',
+    description:
+      'Fan out a topic across multiple research angles, then synthesize evidence into a concise decision brief.',
+    icon: '🔎',
+    category: 'research',
+    tags: ['research', 'synthesis', 'competitive', 'decision'],
+    setupNote:
+      'Name the topic, sources, and decision the research should support before starting.',
+    defaults: {
+      title: 'Research Bureau Scan',
+      goal:
+        'Research the target topic from at least three angles: current market signals, technical feasibility, and user impact. Gather source-backed notes, compare conflicting evidence, and produce a concise decision brief with recommendation, confidence, and open questions.',
+      successCriteria: [
+        'At least 6 source-backed findings are captured',
+        'The final brief compares evidence across at least 3 research angles',
+        'Recommendation includes confidence level and open questions',
+      ],
+      budget: budget({ maxUsd: 3, maxTokens: 180_000, maxTurns: 180, maxWallclockSec: 2 * DAY }),
+      reportSchedule: report(12 * HOUR),
+    },
+  },
+  {
+    id: 'content-studio-cycle',
+    name: 'Content Studio Cycle',
+    description:
+      'Turn a brief into draft, edit pass, publish checklist, and repurposed snippets for multiple channels.',
+    icon: '✍️',
+    category: 'communication',
+    tags: ['content', 'writing', 'editorial', 'launch'],
+    setupNote:
+      'Provide the audience, voice, channels, and any approval boundary. Public posting stays manual by default.',
+    defaults: {
+      title: 'Content Studio Cycle',
+      goal:
+        'Convert the supplied brief into a polished content package. Produce an outline, long-form draft, editor notes, publish checklist, and short repurposed snippets for the requested channels. Do not publish or post externally without approval.',
+      successCriteria: [
+        'Package includes outline, draft, editor notes, checklist, and channel snippets',
+        'Copy follows the requested audience and voice constraints',
+        'Any claims that need evidence are marked before publication',
+      ],
+      budget: budget({ maxUsd: 2, maxTokens: 120_000, maxTurns: 120, maxWallclockSec: DAY }),
+      reportSchedule: report(6 * HOUR),
+    },
+  },
+  {
     id: 'hello-world-demo',
     name: 'Hello World Demo',
     description:

@@ -399,6 +399,17 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.6.1 Highlights
+
+Follow-up release for v1.6 with workflow starts, safer metadata handling, A2A discovery polish, and [#61](https://github.com/swarmclawai/swarmclaw/pull/61) by [@latentwill](https://github.com/latentwill). Thanks latentwill!
+
+- **Mission and protocol templates for real work.** New starter paths cover codebase review sprints, research bureau scans, content studio cycles, release readiness panels, synthesis panels, and builder review loops.
+- **Home launchpad paths.** First-run users can choose a self-hosted assistant, visual workflow, or autonomous mission path, with quality actions still one click away.
+- **A2A discovery is easier to integrate.** The canonical `/.well-known/agent-card.json` endpoint now works alongside the legacy API route and hides disabled or trashed agents from public discovery.
+- **Internal metadata stripping is safer.** Side-channel JSON is removed with balanced-object parsing and zod validation so nested payloads are scrubbed without deleting ordinary user JSON.
+- **Browser smoke gate restored.** `npm run test:e2e` now runs a Playwright smoke against health, A2A discovery, `/home`, and `/quality`, either against a live URL or a temporary local dev server.
+- **OpenCode CLI hang fixed.** OpenCode CLI delegation no longer keeps an inherited stdin pipe open, preventing hangs in non-interactive runs.
+
 ### v1.6.0 Highlights
 
 Operator Quality Center release for builders running autonomous agents in production-like workflows.

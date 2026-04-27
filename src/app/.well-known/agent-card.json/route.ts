@@ -4,10 +4,10 @@ import { buildAgentCardDiscoveryPayload } from '@/lib/a2a/agent-card'
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/.well-known/agent-card?agentId=xxx
+ * GET /.well-known/agent-card.json?agentId=xxx
  *
- * Back-compatible A2A Agent Card discovery endpoint. The canonical public
- * well-known URL is implemented at /.well-known/agent-card.json.
+ * Canonical public A2A Agent Card discovery endpoint. If agentId is omitted,
+ * returns a directory of discoverable local SwarmClaw agents.
  */
 export async function GET(req: Request) {
   const { body, status } = buildAgentCardDiscoveryPayload(req)

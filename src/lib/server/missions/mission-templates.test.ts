@@ -96,6 +96,23 @@ describe('mission-templates: registry', () => {
     assert.equal(templates.getMissionTemplate('weekly-agent-quality-report')?.category, 'monitoring')
   })
 
+  it('includes v1.6 love-path templates for review, research, and content', () => {
+    const expected = [
+      ['codebase-review-sprint', 'productivity'],
+      ['research-bureau-scan', 'research'],
+      ['content-studio-cycle', 'communication'],
+    ] as const
+
+    for (const [id, category] of expected) {
+      const template = templates.getMissionTemplate(id)
+      assert.ok(template, `expected ${id} template`)
+      assert.equal(template.category, category)
+      assert.ok(template.defaults.goal.length > 120, `${id} should have a concrete goal`)
+      assert.ok(template.defaults.successCriteria.length >= 3, `${id} should have acceptance criteria`)
+      assert.ok(template.defaults.budget.maxTurns, `${id} should have a turn budget`)
+    }
+  })
+
   it('getMissionTemplate resolves known ids', () => {
     const list = templates.listMissionTemplates()
     const first = list[0]
