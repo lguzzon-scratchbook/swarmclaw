@@ -8,6 +8,46 @@ import { createLoader, createInflightDeduplicator } from '../store-utils'
 
 const sessionRefreshDedup = createInflightDeduplicator('sessionSlice_inflightRefreshes')
 
+function getSessionSortScore(session: Session): number {
+  return session.lastAssistantAt
+    || session.lastActiveAt
+    || session.updatedAt
+    || session.createdAt
+    || 0
+}
+
+function hasSessionContent(session: Session): boolean {
+  if (typeof session.messageCount === 'number' && Number.isFinite(session.messageCount) && session.messageCount > 0) {
+    return true
+  }
+  if (session.lastMessageSummary) return true
+  return Array.isArray(session.messages) && session.messages.length > 0
+}
+
+function getLatestAgentSessionId(s: AppState, agentId: string, threadSessionId?: string | null): string | null {
+  let bestAnyId: string | null = null
+  let bestAnyScore = Number.NEGATIVE_INFINITY
+  let bestWithContentId: string | null = null
+  let bestWithContentScore = Number.NEGATIVE_INFINITY
+
+  for (const [sessionId, session] of Object.entries(s.sessions)) {
+    if (session.agentId !== agentId) continue
+    const score = getSessionSortScore(session)
+    if (score > bestAnyScore) {
+      bestAnyScore = score
+      bestAnyId = sessionId
+    }
+    if (hasSessionContent(session) && score > bestWithContentScore) {
+      bestWithContentScore = score
+      bestWithContentId = sessionId
+    }
+  }
+
+  if (bestWithContentId) return bestWithContentId
+  if (threadSessionId && s.sessions[threadSessionId]?.agentId === agentId) return threadSessionId
+  return bestAnyId
+}
+
 /** Derive the active session ID from the current agent — no stored `currentSessionId`. */
 export function selectActiveSessionId(s: AppState): string | null {
   if (s.activeSessionIdOverride && s.sessions[s.activeSessionIdOverride]) {
@@ -15,7 +55,7 @@ export function selectActiveSessionId(s: AppState): string | null {
   }
   if (!s.currentAgentId) return null
   const agent = s.agents[s.currentAgentId]
-  return agent?.threadSessionId ?? null
+  return getLatestAgentSessionId(s, s.currentAgentId, agent?.threadSessionId) || agent?.threadSessionId || null
 }
 
 export interface SessionSlice {
