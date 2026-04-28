@@ -200,6 +200,104 @@ test('executeSessionChatTurn persists codex thread id discovered on run-session 
   assert.equal(output.codexThreadId, 'thread_sync_123')
 })
 
+test('executeSessionChatTurn persists intentional codex resume id clears from run-session object', () => {
+  const output = runWithTempDataDir<{
+    codexThreadId: string | null
+    delegateCodex: string | null
+  }>(`
+    const storageMod = await import('@/lib/server/storage')
+    const providersMod = await import('@/lib/providers/index')
+    const execMod = await import('@/lib/server/chat-execution/chat-execution')
+    const storage = storageMod.default || storageMod['module.exports'] || storageMod
+    const executeSessionChatTurn = execMod.executeSessionChatTurn
+      || execMod.default?.executeSessionChatTurn
+      || execMod['module.exports']?.executeSessionChatTurn
+    const providers = providersMod.PROVIDERS
+      || providersMod.default?.PROVIDERS
+      || providersMod['module.exports']?.PROVIDERS
+
+    providers['test-codex-clear-provider'] = {
+      id: 'test-codex-clear-provider',
+      name: 'Codex Clear Test Provider',
+      models: ['unit'],
+      requiresApiKey: false,
+      requiresEndpoint: false,
+      handler: {
+        async streamChat(opts) {
+          opts.session.codexThreadId = null
+          opts.session.delegateResumeIds = {
+            ...(opts.session.delegateResumeIds || {}),
+            codex: null,
+          }
+          return 'ok'
+        },
+      },
+    }
+
+    const now = Date.now()
+    storage.saveAgents({
+      codexclear: {
+        id: 'codexclear',
+        name: 'Codex Clear Agent',
+        description: 'Codex resume id clear test',
+        provider: 'test-codex-clear-provider',
+        model: 'unit',
+        credentialId: null,
+        apiEndpoint: null,
+        fallbackCredentialIds: [],
+        disabled: false,
+        heartbeatEnabled: false,
+        heartbeatIntervalSec: null,
+        extensions: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    })
+
+    storage.saveSessions({
+      codex_clear_session: {
+        id: 'codex_clear_session',
+        name: 'Codex Clear Session',
+        cwd: process.env.WORKSPACE_DIR,
+        user: 'default',
+        provider: 'test-codex-clear-provider',
+        model: 'unit',
+        claudeSessionId: null,
+        codexThreadId: 'thread_old_123',
+        opencodeSessionId: null,
+        geminiSessionId: null,
+        copilotSessionId: null,
+        droidSessionId: null,
+        cursorSessionId: null,
+        qwenSessionId: null,
+        acpSessionId: null,
+        delegateResumeIds: { claudeCode: null, codex: 'thread_old_123', opencode: null, gemini: null, copilot: null, droid: null, cursor: null, qwen: null },
+        messages: [],
+        createdAt: now,
+        lastActiveAt: now,
+        sessionType: 'human',
+        agentId: 'codexclear',
+        extensions: [],
+      },
+    })
+
+    await executeSessionChatTurn({
+      sessionId: 'codex_clear_session',
+      message: 'hello',
+      runId: 'run-codex-clear',
+    })
+
+    const persisted = storage.loadSession('codex_clear_session')
+    console.log(JSON.stringify({
+      codexThreadId: persisted?.codexThreadId ?? null,
+      delegateCodex: persisted?.delegateResumeIds?.codex ?? null,
+    }))
+  `)
+
+  assert.equal(output.codexThreadId, null)
+  assert.equal(output.delegateCodex, null)
+})
+
 test('executeSessionChatTurn keeps tool-only heartbeats off the visible main-thread history and clears stale connector state', () => {
   const output = runWithTempDataDir<{
     connectorContext: Record<string, unknown> | null

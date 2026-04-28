@@ -435,18 +435,21 @@ export async function finalizeChatTurn(params: {
         ;(current as unknown as Record<string, unknown>)[key] = normalized
       }
     }
+    const preferRunValue = (runValue: unknown, fallbackValue: unknown) => (
+      runValue !== undefined ? runValue : fallbackValue
+    )
 
     // Provider handlers receive `sessionForRun` and may mutate CLI resume IDs there.
-    // Persist from run-session first, with fallback to the original session object.
-    persistField('claudeSessionId', sessionForRun.claudeSessionId ?? session.claudeSessionId)
-    persistField('codexThreadId', sessionForRun.codexThreadId ?? session.codexThreadId)
-    persistField('opencodeSessionId', sessionForRun.opencodeSessionId ?? session.opencodeSessionId)
-    persistField('geminiSessionId', sessionForRun.geminiSessionId ?? session.geminiSessionId)
-    persistField('copilotSessionId', sessionForRun.copilotSessionId ?? session.copilotSessionId)
-    persistField('droidSessionId', sessionForRun.droidSessionId ?? session.droidSessionId)
-    persistField('cursorSessionId', sessionForRun.cursorSessionId ?? session.cursorSessionId)
-    persistField('qwenSessionId', sessionForRun.qwenSessionId ?? session.qwenSessionId)
-    persistField('acpSessionId', sessionForRun.acpSessionId ?? session.acpSessionId)
+    // Persist from run-session first, allowing null to intentionally clear IDs.
+    persistField('claudeSessionId', preferRunValue(sessionForRun.claudeSessionId, session.claudeSessionId))
+    persistField('codexThreadId', preferRunValue(sessionForRun.codexThreadId, session.codexThreadId))
+    persistField('opencodeSessionId', preferRunValue(sessionForRun.opencodeSessionId, session.opencodeSessionId))
+    persistField('geminiSessionId', preferRunValue(sessionForRun.geminiSessionId, session.geminiSessionId))
+    persistField('copilotSessionId', preferRunValue(sessionForRun.copilotSessionId, session.copilotSessionId))
+    persistField('droidSessionId', preferRunValue(sessionForRun.droidSessionId, session.droidSessionId))
+    persistField('cursorSessionId', preferRunValue(sessionForRun.cursorSessionId, session.cursorSessionId))
+    persistField('qwenSessionId', preferRunValue(sessionForRun.qwenSessionId, session.qwenSessionId))
+    persistField('acpSessionId', preferRunValue(sessionForRun.acpSessionId, session.acpSessionId))
 
     const sourceResume = (sessionForRun.delegateResumeIds && typeof sessionForRun.delegateResumeIds === 'object')
       ? sessionForRun.delegateResumeIds
@@ -458,14 +461,14 @@ export async function finalizeChatTurn(params: {
       const sr = sourceResume as Record<string, unknown>
       const cr = currentResume as Record<string, unknown>
       const nextResume = {
-        claudeCode: normalizeResumeId(sr.claudeCode ?? cr.claudeCode),
-        codex: normalizeResumeId(sr.codex ?? cr.codex),
-        opencode: normalizeResumeId(sr.opencode ?? cr.opencode),
-        gemini: normalizeResumeId(sr.gemini ?? cr.gemini),
-        copilot: normalizeResumeId(sr.copilot ?? cr.copilot),
-        droid: normalizeResumeId(sr.droid ?? cr.droid),
-        cursor: normalizeResumeId(sr.cursor ?? cr.cursor),
-        qwen: normalizeResumeId(sr.qwen ?? cr.qwen),
+        claudeCode: normalizeResumeId(preferRunValue(sr.claudeCode, cr.claudeCode)),
+        codex: normalizeResumeId(preferRunValue(sr.codex, cr.codex)),
+        opencode: normalizeResumeId(preferRunValue(sr.opencode, cr.opencode)),
+        gemini: normalizeResumeId(preferRunValue(sr.gemini, cr.gemini)),
+        copilot: normalizeResumeId(preferRunValue(sr.copilot, cr.copilot)),
+        droid: normalizeResumeId(preferRunValue(sr.droid, cr.droid)),
+        cursor: normalizeResumeId(preferRunValue(sr.cursor, cr.cursor)),
+        qwen: normalizeResumeId(preferRunValue(sr.qwen, cr.qwen)),
       }
       if (JSON.stringify(currentResume) !== JSON.stringify(nextResume)) {
         current.delegateResumeIds = nextResume

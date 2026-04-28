@@ -160,7 +160,7 @@ describe('resolveCodexProbeInvocation', () => {
 
       const invocation = resolveCodexProbeInvocation(wrapperPath)
       assert.equal(invocation.command, process.execPath)
-      assert.deepEqual(invocation.args, [realScript, 'login', 'status'])
+      assert.deepEqual(invocation.args, [fs.realpathSync(realScript), 'login', 'status'])
     } finally {
       fs.rmSync(tmpRoot, { recursive: true, force: true })
     }

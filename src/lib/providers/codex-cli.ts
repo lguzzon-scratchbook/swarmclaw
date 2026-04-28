@@ -27,19 +27,13 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
 
   const prompt = message
   const args: string[] = ['exec']
-  // Use ~/.codex-sessions/ not /tmp — codex refuses to create helper binaries under /tmp
+  // Use ~/.codex-sessions/ not /tmp — codex refuses to create helper binaries under /tmp.
   const sessionsDir = path.join(os.homedir(), '.codex-sessions')
   const perSessionHome = path.join(sessionsDir, session.id)
-  const hasPerSessionHome = fs.existsSync(perSessionHome)
 
   // Session resume
-  if (session.codexThreadId && hasPerSessionHome) {
+  if (session.codexThreadId) {
     args.push('resume', session.codexThreadId)
-  } else if (session.codexThreadId && !hasPerSessionHome) {
-    // Legacy recovery: older builds removed per-session CODEX_HOME on each turn.
-    // If we still have a thread id but no local metadata, force a fresh thread.
-    log.warn('codex-cli', `Missing session home for stored thread; resetting resume state for ${session.id}`)
-    session.codexThreadId = null
   }
 
   // Use --dangerously-bypass-approvals-and-sandbox instead of --full-auto so that
@@ -69,7 +63,7 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
     env.OPENAI_API_KEY = session.apiKey
   }
 
-  // Auth probe BEFORE creating temp CODEX_HOME — uses real config dir
+  // Auth probe BEFORE creating the session CODEX_HOME — uses real config dir
   if (!session.apiKey) {
     const auth = probeCliAuth(binary, 'codex', env, effectiveCwd)
     if (!auth.authenticated) {
@@ -79,74 +73,69 @@ export function streamCodexCliChat({ session, message, imagePath, systemPrompt, 
     }
   }
 
-  // System prompt + MCP injection: create/use a stable per-session CODEX_HOME
-  // when needed. This must persist across turns so `codex exec resume <thread_id>`
-  // can access local thread metadata.
-  let sessionCodexHome: string | null = null
+  // Always use a stable per-session CODEX_HOME for the actual Codex run. A first
+  // turn can emit a thread id even without system-prompt or MCP injection, and
+  // the next turn needs the same local metadata to resume that thread.
+  const sessionCodexHome = perSessionHome
   const agentForMcp = session.agentId ? getAgent(session.agentId as string) : null
   const agentMcpServerIds: string[] = agentForMcp?.mcpServerIds || []
   const realCodexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
-  const needsSessionHome = hasPerSessionHome || ((systemPrompt && !session.codexThreadId) || agentMcpServerIds.length > 0)
-  if (needsSessionHome) {
-    sessionCodexHome = perSessionHome
-    fs.mkdirSync(sessionCodexHome, { recursive: true })
+  fs.mkdirSync(sessionCodexHome, { recursive: true })
 
-    // Symlink auth/config files from real CODEX_HOME into session dir
-    symlinkConfigFiles(realCodexHome, sessionCodexHome)
+  // Symlink auth/config files from real CODEX_HOME into session dir
+  symlinkConfigFiles(realCodexHome, sessionCodexHome)
 
-    // Write system prompt as AGENTS.override.md (first turn only)
-    if (systemPrompt && !session.codexThreadId) {
-      fs.writeFileSync(path.join(sessionCodexHome, 'AGENTS.override.md'), systemPrompt)
-    }
+  // Write system prompt as AGENTS.override.md (first turn only)
+  if (systemPrompt && !session.codexThreadId) {
+    fs.writeFileSync(path.join(sessionCodexHome, 'AGENTS.override.md'), systemPrompt)
+  }
 
-    // Inject agent-assigned MCP servers into config.toml
-    if (agentMcpServerIds.length > 0) {
-      try {
-        const allMcpServers = loadMcpServers()
-        const tomlParts: string[] = []
-        for (const serverId of agentMcpServerIds) {
-          const config = allMcpServers[serverId]
-          if (!config) continue
-          const name = config.name.replace(/[^a-zA-Z0-9_]/g, '_')
-          if (config.transport === 'stdio' && config.command) {
-            tomlParts.push(`[mcp_servers.${name}]`)
-            tomlParts.push(`command = ${JSON.stringify(config.command)}`)
-            const argsStr = (config.args || []).map((a: string) => JSON.stringify(a)).join(', ')
-            tomlParts.push(`args = [${argsStr}]`)
-            if (config.cwd) tomlParts.push(`cwd = ${JSON.stringify(config.cwd)}`)
-            tomlParts.push('')
-            // Env vars go in a separate subsection: [mcp_servers.name.env]
-            if (config.env && Object.keys(config.env).length > 0) {
-              tomlParts.push(`[mcp_servers.${name}.env]`)
-              for (const [k, v] of Object.entries(config.env as Record<string, string>)) {
-                tomlParts.push(`${k} = ${JSON.stringify(v)}`)
-              }
-              tomlParts.push('')
+  // Inject agent-assigned MCP servers into config.toml
+  if (agentMcpServerIds.length > 0) {
+    try {
+      const allMcpServers = loadMcpServers()
+      const tomlParts: string[] = []
+      for (const serverId of agentMcpServerIds) {
+        const config = allMcpServers[serverId]
+        if (!config) continue
+        const name = config.name.replace(/[^a-zA-Z0-9_]/g, '_')
+        if (config.transport === 'stdio' && config.command) {
+          tomlParts.push(`[mcp_servers.${name}]`)
+          tomlParts.push(`command = ${JSON.stringify(config.command)}`)
+          const argsStr = (config.args || []).map((a: string) => JSON.stringify(a)).join(', ')
+          tomlParts.push(`args = [${argsStr}]`)
+          if (config.cwd) tomlParts.push(`cwd = ${JSON.stringify(config.cwd)}`)
+          tomlParts.push('')
+          // Env vars go in a separate subsection: [mcp_servers.name.env]
+          if (config.env && Object.keys(config.env).length > 0) {
+            tomlParts.push(`[mcp_servers.${name}.env]`)
+            for (const [k, v] of Object.entries(config.env as Record<string, string>)) {
+              tomlParts.push(`${k} = ${JSON.stringify(v)}`)
             }
-          } else if ((config.transport === 'sse' || config.transport === 'streamable-http') && config.url) {
-            tomlParts.push(`[mcp_servers.${name}]`)
-            tomlParts.push(`url = ${JSON.stringify(config.url)}`)
             tomlParts.push('')
           }
+        } else if ((config.transport === 'sse' || config.transport === 'streamable-http') && config.url) {
+          tomlParts.push(`[mcp_servers.${name}]`)
+          tomlParts.push(`url = ${JSON.stringify(config.url)}`)
+          tomlParts.push('')
         }
-        if (tomlParts.length > 0) {
-          const realConfigPath = path.join(realCodexHome, 'config.toml')
-          const existingConfig = fs.existsSync(realConfigPath)
-            ? fs.readFileSync(realConfigPath, 'utf-8')
-            : ''
-          const tempConfigPath = path.join(sessionCodexHome, 'config.toml')
-          // Remove symlink created by symlinkConfigFiles before writing our own file
-          try { fs.unlinkSync(tempConfigPath) } catch { /* no symlink — ignore */ }
-          fs.writeFileSync(tempConfigPath, existingConfig + '\n' + tomlParts.join('\n'))
-          log.info('codex-cli', `Injecting ${agentMcpServerIds.length} MCP server(s) via config.toml`)
-        }
-      } catch (mcpErr) {
-        log.warn('codex-cli', `Failed to build MCP config: ${mcpErr}`)
       }
+      if (tomlParts.length > 0) {
+        const realConfigPath = path.join(realCodexHome, 'config.toml')
+        const existingConfig = fs.existsSync(realConfigPath)
+          ? fs.readFileSync(realConfigPath, 'utf-8')
+          : ''
+        const tempConfigPath = path.join(sessionCodexHome, 'config.toml')
+        // Remove symlink created by symlinkConfigFiles before writing our own file
+        try { fs.unlinkSync(tempConfigPath) } catch { /* no symlink — ignore */ }
+        fs.writeFileSync(tempConfigPath, existingConfig + '\n' + tomlParts.join('\n'))
+        log.info('codex-cli', `Injecting ${agentMcpServerIds.length} MCP server(s) via config.toml`)
+      }
+    } catch (mcpErr) {
+      log.warn('codex-cli', `Failed to build MCP config: ${mcpErr}`)
     }
-
-    env.CODEX_HOME = sessionCodexHome
   }
+  env.CODEX_HOME = sessionCodexHome
 
   log.info('codex-cli', `Spawning: ${binary}`, {
     args: args.map(a => a.length > 100 ? a.slice(0, 100) + '...' : a),
