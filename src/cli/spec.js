@@ -184,6 +184,12 @@ const COMMAND_GROUPS = {
       'task-status': { description: 'Check A2A task status', method: 'GET', path: '/a2a/tasks/:taskId/status', params: ['taskId'] },
     },
   },
+  artifacts: {
+    description: 'Resolve evidence artifacts for runs, missions, and tasks',
+    commands: {
+      list: { description: 'List evidence artifacts (supports --query runId=,missionId=,taskId=)', method: 'GET', path: '/artifacts' },
+    },
+  },
   uploads: {
     description: 'Manage uploaded artifacts',
     commands: {
@@ -191,6 +197,12 @@ const COMMAND_GROUPS = {
       get: { description: 'Download uploaded artifact by filename', method: 'GET', path: '/uploads/:filename', params: ['filename'], binary: true },
       delete: { description: 'Delete uploaded artifact by filename', method: 'DELETE', path: '/uploads/:filename', params: ['filename'] },
       'delete-many': { description: 'Delete uploads by filter/body (filenames, olderThanDays, category, or all)', method: 'DELETE', path: '/uploads' },
+    },
+  },
+  operations: {
+    description: 'Operator triage and readiness summaries',
+    commands: {
+      pulse: { description: 'Get Operations Pulse summary (supports --query range=24h|7d)', method: 'GET', path: '/operations/pulse' },
     },
   },
   files: {
@@ -526,6 +538,7 @@ const COMMAND_GROUPS = {
       list: { description: 'List runs (supports --query sessionId=,status=,limit=)', method: 'GET', path: '/runs' },
       get: { description: 'Get run by id', method: 'GET', path: '/runs/:id', params: ['id'] },
       events: { description: 'Get run event history by run id', method: 'GET', path: '/runs/:id/events', params: ['id'] },
+      brief: { description: 'Get deterministic run brief by run id', method: 'GET', path: '/runs/:id/brief', params: ['id'] },
     },
   },
   webhooks: {

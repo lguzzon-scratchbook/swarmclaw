@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { api } from '@/lib/app/api-client'
 import { MainContent } from '@/components/layout/main-content'
+import { EvidenceShelf } from '@/components/evidence/evidence-shelf'
 import { HintTip } from '@/components/shared/hint-tip'
 import { inputClass } from '@/components/shared/form-styles'
 import { MissionTemplateGallery } from '@/components/missions/mission-template-gallery'
@@ -12,7 +13,7 @@ import {
   type InstantiateInput,
 } from '@/components/missions/mission-template-install-dialog'
 import { MissionEditSheet, isMissionEditable } from '@/components/missions/mission-edit-sheet'
-import type { Mission, MissionReport, MissionEvent, MissionTemplate, Session } from '@/types'
+import type { EvidenceArtifact, Mission, MissionReport, MissionEvent, MissionTemplate, Session } from '@/types'
 import { toast } from 'sonner'
 
 const POLL_MS = 4_000
@@ -412,6 +413,8 @@ interface DetailProps {
 function MissionDetail({ mission, reports, events, busy, onAction, onForceReport, onEdit }: DetailProps) {
   const [selectedReport, setSelectedReport] = useState<MissionReport | null>(null)
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([])
+  const [artifacts, setArtifacts] = useState<EvidenceArtifact[]>([])
+  const [artifactsLoading, setArtifactsLoading] = useState(false)
   const [shareBusy, setShareBusy] = useState<string | null>(null)
   const wallclockCapMs = mission.budget.maxWallclockSec != null ? mission.budget.maxWallclockSec * 1000 : null
   const activeShare = useMemo(
@@ -428,9 +431,22 @@ function MissionDetail({ mission, reports, events, busy, onAction, onForceReport
     }
   }, [mission.id])
 
+  const loadArtifacts = useCallback(async () => {
+    setArtifactsLoading(true)
+    try {
+      const list = await api<EvidenceArtifact[]>('GET', `/artifacts?missionId=${encodeURIComponent(mission.id)}`)
+      setArtifacts(Array.isArray(list) ? list : [])
+    } catch {
+      setArtifacts([])
+    } finally {
+      setArtifactsLoading(false)
+    }
+  }, [mission.id])
+
   useEffect(() => {
     void loadShareLinks()
-  }, [loadShareLinks])
+    void loadArtifacts()
+  }, [loadArtifacts, loadShareLinks])
 
   const shareUrl = activeShare && typeof window !== 'undefined'
     ? `${window.location.origin}/s/${activeShare.token}`
@@ -445,13 +461,14 @@ function MissionDetail({ mission, reports, events, busy, onAction, onForceReport
         label: `${mission.title} public report`,
       })
       setShareLinks((prev) => [link, ...prev])
+      void loadArtifacts()
       toast.success('Mission share link created')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create share link')
     } finally {
       setShareBusy(null)
     }
-  }, [mission.id, mission.title])
+  }, [loadArtifacts, mission.id, mission.title])
 
   const revokeShareLink = useCallback(async () => {
     if (!activeShare) return
@@ -459,13 +476,14 @@ function MissionDetail({ mission, reports, events, busy, onAction, onForceReport
     try {
       const revoked = await api<ShareLink>('DELETE', `/share/${activeShare.id}`)
       setShareLinks((prev) => prev.map((link) => (link.id === revoked.id ? revoked : link)))
+      void loadArtifacts()
       toast.success('Mission share link revoked')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to revoke share link')
     } finally {
       setShareBusy(null)
     }
-  }, [activeShare])
+  }, [activeShare, loadArtifacts])
 
   const copyShareUrl = useCallback(async () => {
     if (!shareUrl) return
@@ -551,6 +569,13 @@ function MissionDetail({ mission, reports, events, busy, onAction, onForceReport
           </div>
         )}
       </div>
+
+      <EvidenceShelf
+        artifacts={artifacts}
+        loading={artifactsLoading}
+        title="Evidence Shelf"
+        emptyLabel="No mission reports, public share links, or milestone evidence yet."
+      />
 
       {mission.successCriteria.length > 0 && (
         <div>
@@ -705,6 +730,14 @@ export default function MissionsPage() {
     setInstallTemplate(template)
     router.replace('/missions', { scroll: false })
   }, [router, searchParams, templates])
+
+  useEffect(() => {
+    const missionId = searchParams.get('mission')?.trim()
+    if (!missionId || missions.length === 0) return
+    if (!missions.some((mission) => mission.id === missionId)) return
+    setSelectedId(missionId)
+    router.replace('/missions', { scroll: false })
+  }, [missions, router, searchParams])
 
   const handleAction = useCallback(async (action: string, reason?: string) => {
     if (!selectedId) return

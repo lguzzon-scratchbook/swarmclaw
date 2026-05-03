@@ -1,6 +1,7 @@
 'use client'
 
 import { AgentAvatar } from '@/components/agents/agent-avatar'
+import { OperationsPulsePanel } from '@/components/operations/operations-pulse-panel'
 import { LaunchActionCard } from '@/components/shared/launch-action-card'
 import type { Agent } from '@/types'
 
@@ -141,6 +142,8 @@ export function HomeLaunchpad({
           </div>
         </div>
       </div>
+
+      <OperationsPulsePanel className="mt-6" compact />
 
       <div className="mt-6 grid gap-3 lg:grid-cols-3">
         <PathCard

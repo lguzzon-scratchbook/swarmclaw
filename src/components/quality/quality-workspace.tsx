@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { MainContent } from '@/components/layout/main-content'
+import { OperationsPulsePanel } from '@/components/operations/operations-pulse-panel'
 import { RunList } from '@/components/runs/run-list'
 import { PageLoader } from '@/components/ui/page-loader'
 import { useWs } from '@/hooks/use-ws'
@@ -310,6 +311,8 @@ export function QualityWorkspace() {
 
           {activeTab === 'overview' && (
             <div className="flex flex-col gap-6">
+              <OperationsPulsePanel defaultRange="7d" compact />
+
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <StatTile
                   label="Needs Attention"

@@ -399,6 +399,16 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.8.1 Highlights
+
+Operator evidence release: a focused follow-up that makes release and mission review easier to scan.
+
+- **Operations Pulse.** Home and Quality now share a live triage panel that rolls missions, runs, approvals, connector readiness, and budget pressure into one next-action queue.
+- **Run Briefs.** Run detail sheets now open with a deterministic brief: objective, owner, timeline, warnings, usage, and evidence before the raw replay log.
+- **Evidence Shelf.** Runs and missions now expose linked artifacts, task outputs, protocol outputs, mission reports, public share links, and knowledge citations through a shared artifact resolver.
+- **Connector readiness.** Connector cards now show credential, route, pairing, gateway, connection, and doctor hints so setup gaps are visible before a platform bridge is started.
+- **API surface.** Added `GET /api/operations/pulse`, `GET /api/runs/:id/brief`, and `GET /api/artifacts` for external operator dashboards and release tooling.
+
 ### v1.8.0 Highlights
 
 Mission Command release: a bigger operator update that makes autonomous missions easier to launch, inspect, and share.

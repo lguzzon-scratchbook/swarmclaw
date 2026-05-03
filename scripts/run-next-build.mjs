@@ -11,13 +11,15 @@ import { ensureBuildBootstrapPaths } from './build-bootstrap-env.mjs'
 
 const require = createRequire(import.meta.url)
 
-export const DEFAULT_MAX_OLD_SPACE_SIZE_MB = '12288'
+export const DEFAULT_MAX_OLD_SPACE_SIZE_MB = '24576'
 export const MIN_MAX_OLD_SPACE_SIZE_MB = 1024
 export const FALLBACK_MIN_MAX_OLD_SPACE_SIZE_MB = 512
 export const RESERVED_BUILD_MEMORY_MB = 768
-export const MAX_OLD_SPACE_RATIO = 0.75
+export const MAX_OLD_SPACE_RATIO = 0.85
 export const LOW_MEMORY_RATIO = 0.6
 export const BUILD_MAX_OLD_SPACE_SIZE_ENV = 'SWARMCLAW_BUILD_MAX_OLD_SPACE_SIZE_MB'
+export const BUILD_BUNDLER_ENV = 'SWARMCLAW_BUILD_BUNDLER'
+export const DEFAULT_BUILD_BUNDLER = 'turbopack'
 export const CGROUP_MEMORY_LIMIT_PATHS = [
   '/sys/fs/cgroup/memory.max',
   '/sys/fs/cgroup/memory/memory.limit_in_bytes',
@@ -39,6 +41,15 @@ export const REQUIRED_STANDALONE_BROWSER_PACKAGES = [
   '@playwright/mcp',
   'playwright',
   'playwright-core',
+]
+export const STANDALONE_LOCAL_STATE_ENTRIES = [
+  '.git',
+  '.tmp-swarmclaw-build',
+  'artifacts',
+  'coverage',
+  'data',
+  'release',
+  'test-results',
 ]
 
 function parsePositiveInteger(value) {
@@ -131,6 +142,18 @@ export function buildNextBuildEnv(
     NODE_OPTIONS: mergeNodeOptions(env.NODE_OPTIONS || '', maxOldSpaceSizeMb),
     SWARMCLAW_BUILD_MODE: env.SWARMCLAW_BUILD_MODE || '1',
   }
+}
+
+export function resolveNextBuildBundlerFlag(args = [], env = process.env) {
+  if (args.includes('--webpack') || args.includes('--turbopack')) return null
+
+  const requested = String(env[BUILD_BUNDLER_ENV] || DEFAULT_BUILD_BUNDLER).trim().toLowerCase()
+  if (requested === 'webpack') return '--webpack'
+  if (requested === 'turbopack') return '--turbopack'
+
+  throw new Error(
+    `${BUILD_BUNDLER_ENV} must be "turbopack" or "webpack"; received ${JSON.stringify(requested)}.`,
+  )
 }
 
 export function hasTraceCopyWarning(output = '') {
@@ -239,6 +262,27 @@ export function repairStandaloneNextMetadata(cwd = process.cwd()) {
   return true
 }
 
+export function pruneStandaloneLocalState(cwd = process.cwd()) {
+  const standaloneDir = path.join(cwd, '.next', 'standalone')
+  if (!fs.existsSync(standaloneDir)) return false
+
+  let pruned = false
+  for (const entry of STANDALONE_LOCAL_STATE_ENTRIES) {
+    const target = path.join(standaloneDir, entry)
+    if (!fs.existsSync(target)) continue
+    fs.rmSync(target, { recursive: true, force: true })
+    pruned = true
+  }
+
+  for (const entry of fs.readdirSync(standaloneDir, { withFileTypes: true })) {
+    if (entry.name !== '.env' && !entry.name.startsWith('.env.')) continue
+    fs.rmSync(path.join(standaloneDir, entry.name), { recursive: entry.isDirectory(), force: true })
+    pruned = true
+  }
+
+  return pruned
+}
+
 export function runNextBuild(
   args = process.argv.slice(2),
   env = process.env,
@@ -246,7 +290,8 @@ export function runNextBuild(
   maxOldSpaceSizeMb = resolveNextBuildMaxOldSpaceSizeMb(env),
 ) {
   const nextBin = require.resolve('next/dist/bin/next')
-  return spawnSync(process.execPath, [nextBin, 'build', '--webpack', ...args], {
+  const bundlerFlag = resolveNextBuildBundlerFlag(args, env)
+  return spawnSync(process.execPath, [nextBin, 'build', ...(bundlerFlag ? [bundlerFlag] : []), ...args], {
     stdio: 'pipe',
     encoding: 'utf-8',
     env: buildNextBuildEnv(env, maxOldSpaceSizeMb, cwd),
@@ -276,6 +321,9 @@ function main() {
     }
     if (result.status === 0 && repairStandaloneBrowserMcpRuntime(process.cwd())) {
       console.error('Copied Playwright MCP runtime packages into standalone build output.')
+    }
+    if (result.status === 0 && pruneStandaloneLocalState(process.cwd())) {
+      console.error('Pruned local state and release artifacts from standalone build output.')
     }
     process.exit(result.status)
   }

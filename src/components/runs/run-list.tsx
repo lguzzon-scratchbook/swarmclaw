@@ -5,7 +5,8 @@ import { api } from '@/lib/app/api-client'
 import { useNow } from '@/hooks/use-now'
 import { useWs } from '@/hooks/use-ws'
 import { BottomSheet } from '@/components/shared/bottom-sheet'
-import type { RunEventRecord, SessionRunRecord, SessionRunStatus } from '@/types'
+import { EvidenceShelf } from '@/components/evidence/evidence-shelf'
+import type { EvidenceArtifact, RunBrief, RunEventRecord, SessionRunRecord, SessionRunStatus } from '@/types'
 import { PageLoader } from '@/components/ui/page-loader'
 import { formatElapsed } from '@/lib/format-display'
 import { GroundingPanel } from '@/components/knowledge/grounding-panel'
@@ -41,7 +42,11 @@ export function RunList() {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<SessionRunRecord | null>(null)
   const [selectedEvents, setSelectedEvents] = useState<RunEventRecord[]>([])
+  const [selectedBrief, setSelectedBrief] = useState<RunBrief | null>(null)
+  const [selectedArtifacts, setSelectedArtifacts] = useState<EvidenceArtifact[]>([])
   const [eventsLoading, setEventsLoading] = useState(false)
+  const [briefLoading, setBriefLoading] = useState(false)
+  const [artifactsLoading, setArtifactsLoading] = useState(false)
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -61,29 +66,42 @@ export function RunList() {
   useEffect(() => {
     if (!selected) return
     let cancelled = false
-    api<RunEventRecord[]>('GET', `/runs/${selected.id}/events?limit=200`)
-      .then((events) => {
-        if (cancelled) return
-        setSelectedEvents(Array.isArray(events) ? events : [])
-      })
-      .catch(() => {
-        if (!cancelled) setSelectedEvents([])
-      })
-      .finally(() => {
-        if (!cancelled) setEventsLoading(false)
-      })
+    void Promise.allSettled([
+      api<RunEventRecord[]>('GET', `/runs/${selected.id}/events?limit=200`),
+      api<RunBrief>('GET', `/runs/${selected.id}/brief`),
+      api<EvidenceArtifact[]>('GET', `/artifacts?runId=${encodeURIComponent(selected.id)}`),
+    ]).then(([eventsResult, briefResult, artifactsResult]) => {
+      if (cancelled) return
+      setSelectedEvents(eventsResult.status === 'fulfilled' && Array.isArray(eventsResult.value) ? eventsResult.value : [])
+      setSelectedBrief(briefResult.status === 'fulfilled' ? briefResult.value : null)
+      setSelectedArtifacts(artifactsResult.status === 'fulfilled' && Array.isArray(artifactsResult.value) ? artifactsResult.value : [])
+    }).finally(() => {
+      if (cancelled) return
+      setEventsLoading(false)
+      setBriefLoading(false)
+      setArtifactsLoading(false)
+    })
     return () => { cancelled = true }
   }, [selected])
 
   const closeSelected = useCallback(() => {
     setSelected(null)
     setSelectedEvents([])
+    setSelectedBrief(null)
+    setSelectedArtifacts([])
     setEventsLoading(false)
+    setBriefLoading(false)
+    setArtifactsLoading(false)
   }, [])
 
   const openSelected = useCallback((run: SessionRunRecord) => {
     setSelected(run)
+    setSelectedEvents([])
+    setSelectedBrief(null)
+    setSelectedArtifacts([])
     setEventsLoading(true)
+    setBriefLoading(true)
+    setArtifactsLoading(true)
   }, [])
 
   const sources = useMemo(() => {
@@ -242,6 +260,61 @@ export function RunList() {
               <p className="text-[12px] text-text-3/60 font-mono">{selected.id}</p>
             </div>
 
+            {/* Brief */}
+            <div className="mb-6">
+              <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Brief</label>
+              {briefLoading ? (
+                <div className="rounded-[12px] border border-white/[0.04] bg-white/[0.02] p-4 text-[11px] text-text-3/60">
+                  Loading brief...
+                </div>
+              ) : selectedBrief ? (
+                <div className="rounded-[12px] border border-white/[0.05] bg-white/[0.025] p-4">
+                  <div className="text-[13px] font-700 text-text">{selectedBrief.title}</div>
+                  <p className="mt-1 text-[12px] leading-relaxed text-text-3/70">{selectedBrief.objective}</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-[10px] border border-white/[0.04] bg-white/[0.02] px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/55">Owner</div>
+                      <div className="mt-1 text-[11px] text-text-2">{selectedBrief.owner ? `${selectedBrief.owner.type}:${selectedBrief.owner.id}` : selectedBrief.source}</div>
+                    </div>
+                    <div className="rounded-[10px] border border-white/[0.04] bg-white/[0.02] px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/55">Usage</div>
+                      <div className="mt-1 text-[11px] text-text-2">
+                        {selectedBrief.usage.inputTokens ?? 0} in / {selectedBrief.usage.outputTokens ?? 0} out
+                        {selectedBrief.usage.estimatedCost != null ? ` - $${selectedBrief.usage.estimatedCost.toFixed(4)}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  {selectedBrief.warnings.length > 0 && (
+                    <div className="mt-3 flex flex-col gap-1.5">
+                      {selectedBrief.warnings.map((warning) => (
+                        <div key={warning} className="rounded-[9px] border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-200">
+                          {warning}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selectedBrief.timeline.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {selectedBrief.timeline.slice(0, 5).map((item, index) => (
+                        <span key={`${item.label}:${item.at}:${index}`} className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3/80">
+                          {item.label} {new Date(item.at).toLocaleTimeString()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {selectedBrief.evidence.length > 0 && (
+                    <div className="mt-3 text-[11px] text-text-3/65">
+                      {selectedBrief.evidence.length} brief evidence item{selectedBrief.evidence.length === 1 ? '' : 's'} found.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-[12px] border border-white/[0.04] bg-white/[0.02] p-4 text-[11px] text-text-3/60">
+                  No brief available for this run.
+                </div>
+              )}
+            </div>
+
             {/* Timing */}
             <div className="mb-6 space-y-2">
               <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em]">Timing</label>
@@ -307,6 +380,15 @@ export function RunList() {
                 )}
               </div>
             )}
+
+            <div className="mb-6">
+              <EvidenceShelf
+                artifacts={selectedArtifacts}
+                loading={artifactsLoading}
+                title="Evidence Shelf"
+                emptyLabel="No linked artifacts, files, reports, or citations for this run."
+              />
+            </div>
 
             <div className="mb-2">
               <label className="block font-display text-[12px] font-600 text-text-2 uppercase tracking-[0.08em] mb-2">Replay</label>

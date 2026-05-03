@@ -68,6 +68,13 @@ const COMMAND_GROUPS = [
     ],
   },
   {
+    name: 'artifacts',
+    description: 'Resolve evidence artifacts for runs, missions, and tasks',
+    commands: [
+      cmd('list', 'GET', '/artifacts', 'List evidence artifacts (use --query runId=, --query missionId=, or --query taskId=)'),
+    ],
+  },
+  {
     name: 'claude-skills',
     description: 'Read local Claude skills directory metadata',
     commands: [
@@ -196,6 +203,13 @@ const COMMAND_GROUPS = [
         expectsJsonBody: true,
         defaultBody: { action: 'clear' },
       }),
+    ],
+  },
+  {
+    name: 'operations',
+    description: 'Operator triage and readiness summaries',
+    commands: [
+      cmd('pulse', 'GET', '/operations/pulse', 'Get Operations Pulse summary (use --query range=24h or --query range=7d)'),
     ],
   },
   {
@@ -544,6 +558,7 @@ const COMMAND_GROUPS = [
       cmd('list', 'GET', '/runs', 'List runs (use --query sessionId=, --query status=, --query limit=)'),
       cmd('get', 'GET', '/runs/:id', 'Get run by id'),
       cmd('events', 'GET', '/runs/:id/events', 'Get run event history by run id'),
+      cmd('brief', 'GET', '/runs/:id/brief', 'Get deterministic run brief by run id'),
     ],
   },
   {

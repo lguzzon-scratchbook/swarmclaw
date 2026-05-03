@@ -6,6 +6,7 @@ import { describe, it } from 'node:test'
 
 import { BUILD_BOOTSTRAP_ROOT_NAME } from './build-bootstrap-env.mjs'
 import {
+  BUILD_BUNDLER_ENV,
   BUILD_MAX_OLD_SPACE_SIZE_ENV,
   DEFAULT_MAX_OLD_SPACE_SIZE_MB,
   NEXT_STANDALONE_METADATA_RELATIVE_DIR,
@@ -15,10 +16,12 @@ import {
   deriveMaxOldSpaceSizeMb,
   hasTraceCopyWarning,
   mergeNodeOptions,
+  pruneStandaloneLocalState,
   repairStandaloneBrowserMcpRuntime,
   readCgroupMemoryLimitBytes,
   repairStandaloneCssTreeData,
   repairStandaloneNextMetadata,
+  resolveNextBuildBundlerFlag,
   resolveNextBuildMaxOldSpaceSizeMb,
 } from './run-next-build.mjs'
 
@@ -47,7 +50,7 @@ describe('run-next-build', () => {
   it('derives a lower heap cap for constrained Docker-style memory limits', () => {
     assert.equal(
       deriveMaxOldSpaceSizeMb(4 * 1024 * 1024 * 1024),
-      '3072',
+      '3328',
     )
     assert.equal(
       deriveMaxOldSpaceSizeMb(2 * 1024 * 1024 * 1024),
@@ -85,12 +88,12 @@ describe('run-next-build', () => {
     assert.equal(
       resolveNextBuildMaxOldSpaceSizeMb(
         {},
-        {
-          readCgroupMemoryLimitBytes: () => 4 * 1024 * 1024 * 1024,
-          totalMem: () => 16 * 1024 * 1024 * 1024,
-        },
-      ),
-      '3072',
+      {
+        readCgroupMemoryLimitBytes: () => 4 * 1024 * 1024 * 1024,
+        totalMem: () => 16 * 1024 * 1024 * 1024,
+      },
+    ),
+      '3328',
     )
   })
 
@@ -110,6 +113,16 @@ describe('run-next-build', () => {
   it('buildNextBuildEnv preserves an explicit build mode', () => {
     const env = buildNextBuildEnv({ SWARMCLAW_BUILD_MODE: 'custom', NODE_OPTIONS: '' })
     assert.equal(env.SWARMCLAW_BUILD_MODE, 'custom')
+  })
+
+  it('uses Turbopack by default and supports Webpack override', () => {
+    assert.equal(resolveNextBuildBundlerFlag([], {}), '--turbopack')
+    assert.equal(resolveNextBuildBundlerFlag([], { [BUILD_BUNDLER_ENV]: 'webpack' }), '--webpack')
+    assert.equal(resolveNextBuildBundlerFlag(['--webpack'], {}), null)
+    assert.throws(
+      () => resolveNextBuildBundlerFlag([], { [BUILD_BUNDLER_ENV]: 'rspack' }),
+      /SWARMCLAW_BUILD_BUNDLER/,
+    )
   })
 
   it('detects standalone trace copy warnings in build output', () => {
@@ -266,6 +279,30 @@ describe('run-next-build', () => {
         fs.existsSync(path.join(tempDir, '.next', 'standalone', 'node_modules', '@playwright', 'mcp', 'package.json')),
         true,
       )
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('pruneStandaloneLocalState removes local runtime and release output from standalone', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmclaw-standalone-prune-'))
+    try {
+      const standaloneDir = path.join(tempDir, '.next', 'standalone')
+      fs.mkdirSync(path.join(standaloneDir, 'data'), { recursive: true })
+      fs.mkdirSync(path.join(standaloneDir, 'release'), { recursive: true })
+      fs.mkdirSync(path.join(standaloneDir, 'artifacts'), { recursive: true })
+      fs.mkdirSync(path.join(standaloneDir, 'node_modules'), { recursive: true })
+      fs.writeFileSync(path.join(standaloneDir, '.env.local'), 'SECRET=value\n')
+      fs.writeFileSync(path.join(standaloneDir, 'server.js'), 'require("next")\n')
+
+      const pruned = pruneStandaloneLocalState(tempDir)
+      assert.equal(pruned, true)
+      assert.equal(fs.existsSync(path.join(standaloneDir, 'data')), false)
+      assert.equal(fs.existsSync(path.join(standaloneDir, 'release')), false)
+      assert.equal(fs.existsSync(path.join(standaloneDir, 'artifacts')), false)
+      assert.equal(fs.existsSync(path.join(standaloneDir, '.env.local')), false)
+      assert.equal(fs.existsSync(path.join(standaloneDir, 'node_modules')), true)
+      assert.equal(fs.existsSync(path.join(standaloneDir, 'server.js')), true)
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true })
     }

@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
 import { HomeLaunchpad } from '@/components/home/home-launchpad'
+import { OperationsPulsePanel } from '@/components/operations/operations-pulse-panel'
 import { useMountedRef } from '@/hooks/use-mounted-ref'
 import { useNow } from '@/hooks/use-now'
 import { api } from '@/lib/app/api-client'
@@ -313,6 +314,8 @@ export default function HomePage() {
               Workspace overview for your agent chats, tasks, and automations
             </p>
           </div>
+
+          <OperationsPulsePanel className="mb-8" compact />
 
           {/* Quick actions / triage */}
           <section className="mb-8" style={{ animation: 'fade-up 0.6s var(--ease-spring) 0.15s both' }}>
