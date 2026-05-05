@@ -31,6 +31,7 @@ import {
 import { onNextIdleWindow } from '@/lib/server/runtime/idle-window'
 
 const KNOWLEDGE_STALE_AFTER_MS = 1000 * 60 * 60 * 24 * 14
+const DEFAULT_PRUNE_ARCHIVED_AFTER_DAYS = 30
 const CHUNK_TARGET_CHARS = 2200
 const CHUNK_OVERLAP_CHARS = 320
 const MAX_KNOWLEDGE_SCAN = 10_000
@@ -1047,6 +1048,38 @@ export async function supersedeKnowledgeSource(
     createdAt: Date.now(),
   })
   return getKnowledgeSourceDetail(updated.id)
+}
+
+export async function pruneArchivedKnowledgeSources(input?: {
+  olderThanDays?: number | null
+  now?: number
+}): Promise<{ pruned: number; sourceIds: string[] }> {
+  await ensureLegacyKnowledgeBackfill()
+  const now = typeof input?.now === 'number' && Number.isFinite(input.now) ? input.now : Date.now()
+  const olderThanDays = typeof input?.olderThanDays === 'number' && Number.isFinite(input.olderThanDays)
+    ? Math.max(1, Math.trunc(input.olderThanDays))
+    : DEFAULT_PRUNE_ARCHIVED_AFTER_DAYS
+  const cutoff = now - olderThanDays * 24 * 60 * 60 * 1000
+  const sourceIds: string[] = []
+
+  for (const source of listStoredSources()) {
+    if (!sourceIsArchived(source) && !sourceIsSuperseded(source)) continue
+    const lifecycleAt = source.archivedAt || source.maintenanceUpdatedAt || source.updatedAt
+    if (lifecycleAt > cutoff) continue
+    const title = source.title
+    const removed = await deleteKnowledgeSource(source.id)
+    if (!removed) continue
+    sourceIds.push(source.id)
+    recordMaintenanceAction({
+      kind: 'prune',
+      sourceId: source.id,
+      relatedSourceId: source.duplicateOfSourceId || source.supersededBySourceId || null,
+      summary: `Pruned ${title}`,
+      createdAt: now,
+    })
+  }
+
+  return { pruned: sourceIds.length, sourceIds }
 }
 
 function sameSourceOrigin(left: KnowledgeSource, right: KnowledgeSource): boolean {

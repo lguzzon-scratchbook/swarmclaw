@@ -259,3 +259,48 @@ test('runKnowledgeHygieneMaintenance keeps same-content sources separate when vi
   assert.equal(output.agent1Hits, 2)
   assert.equal(output.agent2Hits, 1)
 })
+
+test('pruneArchivedKnowledgeSources deletes old archived sources and records prune actions', () => {
+  const output = runWithTempDataDir<{
+    pruned: number
+    sourceStillExists: boolean
+    hitCount: number
+    actionKind: string | null
+  }>(`
+    const knowledgeMod = await import('./src/lib/server/knowledge-sources.ts')
+    const storageMod = await import('./src/lib/server/storage.ts')
+    const knowledge = knowledgeMod.default || knowledgeMod
+    const storage = storageMod.default || storageMod
+
+    const source = await knowledge.createKnowledgeSource({
+      kind: 'manual',
+      title: 'Old Archived Notes',
+      content: 'prune candidate payload',
+    })
+
+    await knowledge.archiveKnowledgeSource(source.source.id, { reason: 'obsolete' })
+    const oldTimestamp = Date.now() - 60 * 24 * 60 * 60 * 1000
+    storage.patchKnowledgeSource(source.source.id, (current) => current ? {
+      ...current,
+      archivedAt: oldTimestamp,
+      maintenanceUpdatedAt: oldTimestamp,
+      updatedAt: oldTimestamp,
+    } : null)
+
+    const result = await knowledge.pruneArchivedKnowledgeSources({ olderThanDays: 30 })
+    const summary = await knowledge.getKnowledgeHygieneSummary()
+    const hits = await knowledge.searchKnowledgeHits({ query: 'candidate', includeArchived: true })
+
+    console.log(JSON.stringify({
+      pruned: result.pruned,
+      sourceStillExists: Boolean(storage.loadKnowledgeSource(source.source.id)),
+      hitCount: hits.length,
+      actionKind: summary.recentActions.find((action) => action.sourceId === source.source.id)?.kind || null,
+    }))
+  `, { prefix: 'swarmclaw-knowledge-prune-' })
+
+  assert.equal(output.pruned, 1)
+  assert.equal(output.sourceStillExists, false)
+  assert.equal(output.hitCount, 0)
+  assert.equal(output.actionKind, 'prune')
+})

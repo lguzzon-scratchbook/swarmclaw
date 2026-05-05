@@ -124,6 +124,7 @@ describe('delegation-advisory', () => {
     assert.equal(result.shouldDelegate, true)
     assert.equal(result.style, 'managerial')
     assert.equal(result.recommended?.agentId, 'builder')
+    assert.equal(result.recommended?.routeKey, 'coding:coding,debugging,implementation:builder')
     assert.match(advisory.formatDelegationRationale(result.recommended), /coding/i)
   })
 

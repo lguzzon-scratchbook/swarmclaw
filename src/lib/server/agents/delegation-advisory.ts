@@ -20,6 +20,7 @@ export interface DelegationTaskProfile {
 export interface DelegationCandidateFit {
   agentId: string
   agentName: string
+  routeKey: string
   score: number
   availability: 'idle' | 'working' | 'unknown'
   matchedCapabilities: string[]
@@ -74,6 +75,14 @@ function matchedCapabilities(agentCapabilities: string[] | undefined, requiredCa
   if (!requiredCapabilities.length || !Array.isArray(agentCapabilities) || !agentCapabilities.length) return []
   const agentSet = new Set(agentCapabilities.map((entry) => entry.toLowerCase()))
   return requiredCapabilities.filter((entry) => agentSet.has(entry.toLowerCase()))
+}
+
+function buildRouteKey(agent: Agent, profile: DelegationTaskProfile): string {
+  const required = profile.requiredCapabilities
+    .map((entry) => entry.toLowerCase())
+    .sort()
+    .join(',')
+  return [profile.workType, required || 'general', agent.id].join(':')
 }
 
 function roleAdjustment(agent: Agent, profile: DelegationTaskProfile): number {
@@ -141,6 +150,7 @@ function buildCandidateFit(
   return {
     agentId: agent.id,
     agentName: agent.name,
+    routeKey: buildRouteKey(agent, profile),
     score,
     availability,
     matchedCapabilities: matched,

@@ -20,6 +20,28 @@ const TASK_STATUS_VALUES = new Set([
   'archived',
 ])
 
+const ASSIGNMENT_START_WORKFLOW_STATES = new Set(['triage', 'backlog', 'todo'])
+
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
+}
+
+export function resolveAssignmentWorkflowStateTransition(params: {
+  previousAgentId?: string | null
+  nextAgentId?: string | null
+  previousWorkflowStateId?: string | null
+  explicitWorkflowState?: boolean
+}): string | null {
+  if (params.explicitWorkflowState) return null
+  const previousAgentId = typeof params.previousAgentId === 'string' ? params.previousAgentId.trim() : ''
+  const nextAgentId = typeof params.nextAgentId === 'string' ? params.nextAgentId.trim() : ''
+  if (!nextAgentId || nextAgentId === previousAgentId) return null
+  const currentWorkflow = typeof params.previousWorkflowStateId === 'string' && params.previousWorkflowStateId.trim()
+    ? params.previousWorkflowStateId.trim()
+    : 'backlog'
+  return ASSIGNMENT_START_WORKFLOW_STATES.has(currentWorkflow) ? 'in_progress' : null
+}
+
 export function deriveTaskTitle(input: { title?: unknown; description?: unknown }): string {
   const explicit = typeof input.title === 'string' ? input.title.replace(/\s+/g, ' ').trim() : ''
   if (explicit && !/^untitled task$/i.test(explicit)) return explicit.slice(0, 120)
@@ -157,6 +179,7 @@ export type PrepareTaskCreationResult =
 
 export function prepareTaskCreation(options: PrepareTaskCreationOptions): PrepareTaskCreationResult {
   const seed = options.seed ? { ...options.seed } : {}
+  delete seed.workType
   const explicitTitle = typeof options.input.title === 'string' ? options.input.title.trim() : ''
   const derivedTitle = deriveTaskTitle(options.input)
   const nextTitle = options.deriveTitleFromDescription
@@ -194,6 +217,9 @@ export function prepareTaskCreation(options: PrepareTaskCreationOptions): Prepar
       qualityGate,
     },
   })
+  if (!task.workflowStateId && task.agentId) {
+    task.workflowStateId = 'in_progress'
+  }
   task.fingerprint = computeTaskFingerprint(task.title || 'Untitled Task', task.agentId || '')
 
   const duplicate = task.fingerprint
@@ -227,6 +253,8 @@ export interface ApplyTaskPatchOptions {
 
 export function applyTaskPatch(options: ApplyTaskPatchOptions): BoardTask {
   const nextPatch = { ...options.patch }
+  const previousAgentId = options.task.agentId
+  const previousWorkflowStateId = options.task.workflowStateId || null
   if (Object.prototype.hasOwnProperty.call(nextPatch, 'status')) {
     const normalized = normalizeTaskStatusInput(nextPatch.status, options.task.status)
     if (normalized) nextPatch.status = normalized
@@ -240,6 +268,13 @@ export function applyTaskPatch(options: ApplyTaskPatchOptions): BoardTask {
 
   Object.assign(options.task, nextPatch, { updatedAt: options.now })
   if (options.clearProjectIdWhenNull && nextPatch.projectId === null) delete options.task.projectId
+  const workflowTransition = resolveAssignmentWorkflowStateTransition({
+    previousAgentId,
+    nextAgentId: options.task.agentId,
+    previousWorkflowStateId,
+    explicitWorkflowState: hasOwn(nextPatch, 'workflowStateId'),
+  })
+  if (workflowTransition) options.task.workflowStateId = workflowTransition
 
   if (options.task.status === 'completed') {
     const { validation } = refreshTaskCompletionValidation(options.task, options.settings)

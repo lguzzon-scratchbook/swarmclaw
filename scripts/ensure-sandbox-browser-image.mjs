@@ -10,6 +10,7 @@ const args = new Set(process.argv.slice(2))
 const quiet = args.has('--quiet')
 const required = args.has('--required')
 const image = process.env.SWARMCLAW_SANDBOX_BROWSER_IMAGE || 'swarmclaw-sandbox-browser:bookworm-slim'
+const DEFAULT_BUILD_TIMEOUT_MS = 20 * 60 * 1000
 const SOURCE_LABEL = 'swarmclaw.sandboxBrowserSourceHash'
 
 function log(message) {
@@ -27,6 +28,11 @@ function run(command, commandArgs, options = {}) {
     encoding: 'utf8',
     ...options,
   })
+}
+
+function readPositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
 function commandExists(name) {
@@ -56,6 +62,7 @@ function readImageLabel(name, label) {
 }
 
 function buildImage(sourceHash) {
+  const timeoutMs = readPositiveInteger(process.env.SWARMCLAW_SANDBOX_BROWSER_BUILD_TIMEOUT_MS, DEFAULT_BUILD_TIMEOUT_MS)
   log(`Building sandbox browser image ${image}...`)
   const result = spawnSync(
     'docker',
@@ -69,13 +76,16 @@ function buildImage(sourceHash) {
     {
       cwd,
       stdio: 'inherit',
+      timeout: timeoutMs,
     },
   )
   if (result.error || (result.status ?? 1) !== 0) {
+    const timedOut = result.error?.code === 'ETIMEDOUT' || result.signal === 'SIGTERM'
+    const detail = timedOut ? ` Build timed out after ${timeoutMs}ms.` : ''
     if (required) {
-      fail(`Failed to build sandbox browser image ${image}.`, result.status ?? 1)
+      fail(`Failed to build sandbox browser image ${image}.${detail}`, result.status ?? 1)
     }
-    log(`Skipping sandbox browser image after build failure.`)
+    log(`Skipping sandbox browser image after build failure.${detail}`)
     return false
   }
   log(`Sandbox browser image ready: ${image}`)

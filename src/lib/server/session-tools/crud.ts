@@ -43,6 +43,7 @@ import {
   buildDelegationTaskProfile,
   formatDelegationRationale,
   resolveDelegationAdvisory,
+  type DelegationWorkType,
 } from '@/lib/server/agents/delegation-advisory'
 import type { ToolBuildContext } from './context'
 import { normalizeToolInputArgs } from './normalize-tool-args'
@@ -102,6 +103,17 @@ function buildTaskDelegationText(parsed: Record<string, unknown>): string {
   return [title, description].filter(Boolean).join('\n\n').trim()
 }
 
+function normalizeDelegationWorkType(value: unknown): DelegationWorkType | null {
+  return value === 'coding'
+    || value === 'research'
+    || value === 'writing'
+    || value === 'review'
+    || value === 'operations'
+    || value === 'general'
+    ? value
+    : null
+}
+
 async function resolveManagedTaskDelegation(params: {
   parsed: Record<string, unknown>
   agents: ReturnType<typeof loadAgents>
@@ -122,9 +134,11 @@ async function resolveManagedTaskDelegation(params: {
     return { assignedAgentId: params.assignedAgentId, advisory: null }
   }
 
+  const decisionStartedAt = Date.now()
   const explicitCapabilities = normalizeStringList(params.parsed.requiredCapabilities)
+  const explicitWorkType = normalizeDelegationWorkType(params.parsed.workType)
   const classificationText = buildTaskDelegationText(params.parsed)
-  const classification = (!explicitCapabilities.length && classificationText && params.ctx?.sessionId)
+  const classification = (!explicitCapabilities.length && !explicitWorkType && classificationText && params.ctx?.sessionId)
     ? await classifyMessage({
         sessionId: params.ctx.sessionId,
         agentId: currentAgentId,
@@ -134,6 +148,7 @@ async function resolveManagedTaskDelegation(params: {
 
   const profile = buildDelegationTaskProfile({
     classification,
+    workType: explicitWorkType,
     requiredCapabilities: explicitCapabilities,
   })
   if (!profile.substantial) {
@@ -167,10 +182,18 @@ async function resolveManagedTaskDelegation(params: {
     advisory: {
       recommendedAgentId: recommended.agentId,
       recommendedAgentName: recommended.agentName,
+      routeKey: recommended.routeKey,
       rationale: formatDelegationRationale(recommended),
       workType: profile.workType,
       requiredCapabilities: profile.requiredCapabilities,
       autoAssigned,
+      routingMode: explicitCapabilities.length || explicitWorkType
+        ? 'deterministic'
+        : classification
+          ? 'classified'
+          : 'default',
+      decisionLatencyMs: Date.now() - decisionStartedAt,
+      score: Number(recommended.score.toFixed(3)),
     },
   }
 }
@@ -465,7 +488,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
       }
       description += '\n\nCreate/update calls accept either `data` as a JSON string or direct top-level fields like `title`, `description`, `status`, `agentId`, and `projectId`.'
       if (canAssignOtherAgents) {
-        description += '\n\nWhen you omit an assignee, the runtime may auto-assign the task to a materially better-fit teammate based on `requiredCapabilities` or the classified work type. If you set an explicit assignee, it is respected in v1, but the response may include `delegationAdvisory` when another teammate is a better fit.'
+        description += '\n\nWhen you omit an assignee, the runtime may auto-assign the task to a materially better-fit teammate based on `requiredCapabilities`, explicit `workType`, or the classified work type. Use `workType:"coding"|"research"|"writing"|"review"|"operations"|"general"` for deterministic routing without a classifier call. If you set an explicit assignee, it is respected in v1, but the response may include `delegationAdvisory` when another teammate is a better fit.'
       }
       description += '\n\nFor follow-up work, set `continueFromTaskId` (or `followUpToTaskId`) to a prior task ID. The new task will inherit the predecessor\'s project/agent/session context, block on that task by default, and reuse its execution session when possible.'
       if (ctx?.projectId) {

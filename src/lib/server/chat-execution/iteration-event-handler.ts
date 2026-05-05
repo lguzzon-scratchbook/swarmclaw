@@ -30,6 +30,7 @@ import {
   createReasoningContentMetadata,
   extractReasoningContentDelta,
 } from '@/lib/providers/deepseek-reasoning-chat-openai'
+import { StreamingReasoningTagScrubber } from '@/lib/server/chat-execution/reasoning-tag-scrubber'
 
 // ---------------------------------------------------------------------------
 // LangGraph event kind constants
@@ -92,9 +93,23 @@ export async function processIterationEvents(opts: ProcessIterationEventsOpts): 
   let toolEndCount = 0
   const iterationText = { value: '' }
   const toolPerfEnds = new Map<string, (extra?: Record<string, unknown>) => number>()
+  const reasoningTagScrubber = new StreamingReasoningTagScrubber()
 
   /** Interval for progress checkpoint nudges */
   const PROGRESS_CHECK_INTERVAL = 10
+
+  const emitThinking = (text: string) => {
+    if (!text) return
+    state.accumulatedThinking += text
+    write(`data: ${JSON.stringify({ t: 'thinking', text })}\n\n`)
+  }
+
+  const appendScrubbedText = (text: string) => {
+    if (!text) return
+    const scrubbed = reasoningTagScrubber.feed(text)
+    if (scrubbed.reasoning) emitThinking(scrubbed.reasoning)
+    if (scrubbed.visible) state.appendText(scrubbed.visible, iterationText, write)
+  }
 
   for await (const event of eventStream) {
     const kind = event.event
@@ -104,27 +119,24 @@ export async function processIterationEvents(opts: ProcessIterationEventsOpts): 
       const chunk = event.data?.chunk
       const reasoningDelta = extractReasoningContentDelta(chunk?.additional_kwargs as Record<string, unknown> | undefined)
       if (reasoningDelta) {
-        state.accumulatedThinking += reasoningDelta
-        write(`data: ${JSON.stringify({ t: 'thinking', text: reasoningDelta })}\n\n`)
+        emitThinking(reasoningDelta)
         write(`data: ${JSON.stringify({ t: 'md', text: JSON.stringify(createReasoningContentMetadata(reasoningDelta)) })}\n\n`)
       }
       if (chunk?.content) {
         if (Array.isArray(chunk.content)) {
           for (const block of chunk.content) {
             if (block.type === 'thinking' && block.thinking) {
-              state.accumulatedThinking += block.thinking
-              write(`data: ${JSON.stringify({ t: 'thinking', text: block.thinking })}\n\n`)
+              emitThinking(block.thinking)
             } else if (typeof block.text === 'string' && block.text.startsWith('[[thinking]]')) {
-              state.accumulatedThinking += block.text.slice(12)
-              write(`data: ${JSON.stringify({ t: 'thinking', text: block.text.slice(12) })}\n\n`)
+              emitThinking(block.text.slice(12))
             } else if (block.text) {
-              state.appendText(block.text, iterationText, write)
+              appendScrubbedText(block.text)
             }
           }
         } else {
           const text = typeof chunk.content === 'string' ? chunk.content : ''
           if (text) {
-            state.appendText(text, iterationText, write)
+            appendScrubbedText(text)
           }
         }
       }
@@ -350,6 +362,10 @@ export async function processIterationEvents(opts: ProcessIterationEventsOpts): 
       }
     }
   }
+
+  const finalScrubbed = reasoningTagScrubber.flush()
+  if (finalScrubbed.reasoning) emitThinking(finalScrubbed.reasoning)
+  if (finalScrubbed.visible) state.appendText(finalScrubbed.visible, iterationText, write)
 
   return {
     reachedExecutionBoundary,

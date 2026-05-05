@@ -399,6 +399,16 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.9.2 Highlights
+
+Bundled competitor-parity release: Hermes-style reasoning hygiene, deterministic delegation routing, Mission Control task workflow polish, OpenClaw export hardening, and Paperclip-style timeout hygiene.
+
+- **Stateful reasoning tag scrubber.** String-streamed `<think>`, `<thinking>`, `<reasoning>`, `<thought>`, and `<REASONING_SCRATCHPAD>` blocks are removed across split deltas and routed into SwarmClaw's thinking stream instead of leaking into visible answers.
+- **Deterministic delegation profiles.** `manage_tasks` now accepts explicit `workType` and `requiredCapabilities` routing hints, returns a stable `routeKey`, and can auto-assign unowned work without a classifier call when the profile is explicit.
+- **Assignment workflow transitions.** Newly assigned backlog/triage/todo tasks move into the `in_progress` workflow lane without changing their runtime status or queueing execution.
+- **Knowledge hygiene pruning.** Archived or superseded knowledge sources can now be pruned after a retention window, with prune actions recorded in the hygiene summary.
+- **Collision-safe exports and timeout hardening.** Portability exports support timestamped attachment filenames, the sandbox browser image build has a configurable timeout, and release notes now carry the macOS quarantine workaround for ad-hoc signed desktop builds.
+
 ### v1.9.1 Highlights
 
 Task execution workspace release: the first Paperclip-style work-control slice for task-scoped workspaces, preview handoffs, and liveness evidence.

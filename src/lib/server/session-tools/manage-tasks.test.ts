@@ -172,7 +172,7 @@ describe('manage_tasks tool', () => {
         action: 'create',
         title: 'Implement API integration',
         description: 'Build the API client and fix the failing tests.',
-        requiredCapabilities: ['coding'],
+        workType: 'coding',
         status: 'backlog',
       })
 
@@ -185,7 +185,11 @@ describe('manage_tasks tool', () => {
     assert.equal(output.stored.agentId, 'builder')
     assert.equal(output.response.delegationAdvisory.autoAssigned, true)
     assert.equal(output.response.delegationAdvisory.recommendedAgentId, 'builder')
-    assert.deepEqual(output.response.delegationAdvisory.requiredCapabilities, ['coding'])
+    assert.deepEqual(output.response.delegationAdvisory.requiredCapabilities, ['coding', 'implementation', 'debugging'])
+    assert.equal(output.response.delegationAdvisory.routingMode, 'deterministic')
+    assert.match(output.response.delegationAdvisory.routeKey, /^coding:coding,debugging,implementation:builder$/)
+    assert.equal(typeof output.response.delegationAdvisory.decisionLatencyMs, 'number')
+    assert.equal(output.stored.workflowStateId, 'in_progress')
   })
 
   it('keeps an explicit assignee but returns delegation advisory when another teammate is a better fit', () => {
@@ -262,5 +266,6 @@ describe('manage_tasks tool', () => {
     assert.equal(output.stored.agentId, 'researcher')
     assert.equal(output.response.delegationAdvisory.autoAssigned, false)
     assert.equal(output.response.delegationAdvisory.recommendedAgentId, 'builder')
+    assert.equal(output.response.delegationAdvisory.routingMode, 'deterministic')
   })
 })

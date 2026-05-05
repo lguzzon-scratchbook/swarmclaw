@@ -486,7 +486,7 @@ export interface MemoryEntry {
 
 export type KnowledgeSourceKind = 'manual' | 'file' | 'url'
 export type KnowledgeSyncStatus = 'ready' | 'syncing' | 'error'
-export type KnowledgeHygieneActionKind = 'sync' | 'reindex' | 'archive' | 'restore' | 'supersede'
+export type KnowledgeHygieneActionKind = 'sync' | 'reindex' | 'archive' | 'restore' | 'supersede' | 'prune'
 export type KnowledgeHygieneFindingKind = 'stale' | 'duplicate' | 'overlap' | 'broken' | 'archived' | 'superseded'
 
 export interface KnowledgeCitation {

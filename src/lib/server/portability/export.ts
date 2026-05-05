@@ -34,6 +34,16 @@ export interface PortableManifest {
   extensions?: PortableExtensionRef[]
 }
 
+export function buildPortableExportFilename(manifest: Pick<PortableManifest, 'exportedAt'> = { exportedAt: new Date().toISOString() }): string {
+  const safeStamp = manifest.exportedAt
+    .replaceAll(':', '')
+    .replaceAll('.', '')
+    .replaceAll('-', '')
+    .replace('T', '-')
+    .replace('Z', 'Z')
+  return `swarmclaw-export-${safeStamp}.json`
+}
+
 export type PortableAgent = Omit<Agent,
   | 'id' | 'credentialId' | 'fallbackCredentialIds' | 'apiEndpoint'
   | 'threadSessionId' | 'lastUsedAt' | 'totalCost' | 'trashedAt'

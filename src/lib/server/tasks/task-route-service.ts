@@ -28,7 +28,11 @@ import {
   type PrepareTaskExecutionWorkspaceOptions,
 } from '@/lib/server/tasks/task-execution-workspace'
 import { resolveTaskAgentFromDescription } from '@/lib/server/tasks/task-mention'
-import { applyTaskPatch, prepareTaskCreation } from '@/lib/server/tasks/task-service'
+import {
+  applyTaskPatch,
+  prepareTaskCreation,
+  resolveAssignmentWorkflowStateTransition,
+} from '@/lib/server/tasks/task-service'
 import { enqueueSystemEvent } from '@/lib/server/runtime/system-events'
 import { queueSwarmFeedTaskCompletionWake } from '@/lib/server/swarmfeed-runtime'
 import { notify } from '@/lib/server/ws-hub'
@@ -427,11 +431,24 @@ export function bulkUpdateTasksFromRoute(body: Record<string, unknown>): Service
       }
     }
     if ('agentId' in body) {
+      const previousAgentId = tasks[id].agentId
+      const previousWorkflowStateId = tasks[id].workflowStateId || null
       tasks[id].agentId = body.agentId === null ? '' : String(body.agentId)
+      const workflowTransition = resolveAssignmentWorkflowStateTransition({
+        previousAgentId,
+        nextAgentId: tasks[id].agentId,
+        previousWorkflowStateId,
+        explicitWorkflowState: Object.prototype.hasOwnProperty.call(body, 'workflowStateId'),
+      })
+      if (workflowTransition) tasks[id].workflowStateId = workflowTransition
     }
     if ('projectId' in body) {
       if (body.projectId === null) delete tasks[id].projectId
       else tasks[id].projectId = String(body.projectId)
+    }
+    if ('workflowStateId' in body) {
+      if (body.workflowStateId === null) delete tasks[id].workflowStateId
+      else tasks[id].workflowStateId = String(body.workflowStateId)
     }
     tasks[id].updatedAt = Date.now()
     updated += 1

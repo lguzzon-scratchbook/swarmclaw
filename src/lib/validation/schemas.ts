@@ -200,6 +200,8 @@ export const TaskCreateSchema = z.object({
   retryBackoffSec: z.number().optional(),
   priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
   dueAt: z.number().nullable().optional(),
+  workflowStateId: z.string().nullable().optional(),
+  requiredCapabilities: z.array(z.string()).optional(),
   provisionWorkspace: z.boolean().optional(),
   previewLinks: z.array(z.object({
     id: z.string().optional(),

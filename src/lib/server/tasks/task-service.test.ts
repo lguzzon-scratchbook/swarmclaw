@@ -3,8 +3,11 @@ import { describe, it } from 'node:test'
 
 import { computeTaskFingerprint } from '@/lib/task-dedupe'
 import type { BoardTask } from '@/types'
-
-import { applyTaskPatch, prepareTaskCreation } from '@/lib/server/tasks/task-service'
+import {
+  applyTaskPatch,
+  prepareTaskCreation,
+  resolveAssignmentWorkflowStateTransition,
+} from '@/lib/server/tasks/task-service'
 
 function makeTask(overrides: Partial<BoardTask> = {}): BoardTask {
   return {
@@ -104,5 +107,60 @@ describe('task service helpers', () => {
     })
 
     assert.equal(task.status, 'queued')
+  })
+})
+
+describe('task-service assignment workflow transitions', () => {
+  it('moves newly assigned backlog workflow tasks to in_progress without queueing runtime work', () => {
+    const task = makeTask({ agentId: '', workflowStateId: 'backlog' })
+    applyTaskPatch({
+      task,
+      patch: { agentId: 'agent-builder' },
+      now: 100,
+    })
+
+    assert.equal(task.agentId, 'agent-builder')
+    assert.equal(task.status, 'backlog')
+    assert.equal(task.workflowStateId, 'in_progress')
+    assert.equal(task.updatedAt, 100)
+  })
+
+  it('preserves explicit workflow state patches', () => {
+    const task = makeTask({ workflowStateId: 'todo' })
+    applyTaskPatch({
+      task,
+      patch: { agentId: 'agent-builder', workflowStateId: 'needs_review' },
+      now: 100,
+    })
+
+    assert.equal(task.workflowStateId, 'needs_review')
+  })
+
+  it('seeds assigned task creation into the in_progress workflow lane', () => {
+    const prepared = prepareTaskCreation({
+      input: {
+        title: 'Build the client',
+        description: '',
+        agentId: 'builder',
+      },
+      tasks: {},
+      now: 200,
+    })
+
+    assert.equal(prepared.ok, true)
+    if (prepared.ok) {
+      assert.equal(prepared.task.status, 'backlog')
+      assert.equal(prepared.task.workflowStateId, 'in_progress')
+    }
+  })
+
+  it('leaves already-started workflow states alone', () => {
+    const next = resolveAssignmentWorkflowStateTransition({
+      previousAgentId: '',
+      nextAgentId: 'agent-builder',
+      previousWorkflowStateId: 'needs_review',
+    })
+
+    assert.equal(next, null)
   })
 })
