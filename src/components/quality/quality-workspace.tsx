@@ -17,7 +17,7 @@ import {
 } from '@/lib/quality/quality-summary'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/use-app-store'
-import type { EvalRun, EvalSuiteResult } from '@/lib/server/eval/types'
+import type { EvalEnvironmentPlan, EvalRun, EvalSuiteResult } from '@/lib/server/eval/types'
 import type { Agent, ApprovalRequest, SessionRunRecord } from '@/types'
 
 type QualityTab = 'overview' | 'evals' | 'approvals' | 'runs'
@@ -105,6 +105,96 @@ function EmptyState({ title, description }: { title: string; description: string
   )
 }
 
+function environmentStatusClass(status: EvalEnvironmentPlan['status']): string {
+  if (status === 'ready') return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200'
+  if (status === 'warning') return 'border-amber-500/25 bg-amber-500/10 text-amber-200'
+  return 'border-rose-500/25 bg-rose-500/10 text-rose-200'
+}
+
+function checkClass(level: 'info' | 'warn' | 'error'): string {
+  if (level === 'error') return 'border-rose-500/20 bg-rose-500/[0.05] text-rose-200'
+  if (level === 'warn') return 'border-amber-500/20 bg-amber-500/[0.05] text-amber-200'
+  return 'border-white/[0.06] bg-white/[0.025] text-text-3'
+}
+
+function EvalEnvironmentPanel({ plan, loading, onRefresh }: {
+  plan: EvalEnvironmentPlan | null
+  loading: boolean
+  onRefresh: () => void
+}) {
+  return (
+    <div className="rounded-[12px] border border-white/[0.06] bg-white/[0.025] px-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[13px] font-800 text-text">Validation environment</div>
+          <p className="mt-1 text-[11px] leading-relaxed text-text-3/65">
+            Preflight checks, workspace context, and generated files for the selected eval.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="shrink-0 rounded-[8px] border border-white/[0.08] px-2 py-1 text-[10px] font-800 text-text-2 transition-colors hover:bg-white/[0.06] disabled:opacity-40"
+        >
+          {loading ? 'Checking' : 'Refresh'}
+        </button>
+      </div>
+      {!plan ? (
+        <div className="mt-3 text-[11px] text-text-3/60">{loading ? 'Checking readiness...' : 'Choose an agent and scenario.'}</div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn('rounded-full border px-2 py-1 text-[10px] font-800 uppercase tracking-[0.08em]', environmentStatusClass(plan.status))}>
+              {plan.status}
+            </span>
+            {plan.target && (
+              <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">
+                {plan.target.kind} - {plan.target.label}
+              </span>
+            )}
+            <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">
+              {plan.requiredTools.length} tool{plan.requiredTools.length === 1 ? '' : 's'}
+            </span>
+            <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[10px] font-700 text-text-3">
+              {plan.generatedFiles.length} file{plan.generatedFiles.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          {plan.target?.environmentLabel && (
+            <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-text-3/70">
+              Environment: <span className="font-700 text-text-2">{plan.target.environmentLabel}</span>
+              {plan.target.environmentStatus ? ` (${plan.target.environmentStatus})` : ''}
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            {plan.checks.slice(0, 4).map((check) => (
+              <div key={`${check.code}:${check.message}`} className={cn('rounded-[9px] border px-2.5 py-2 text-[11px] leading-relaxed', checkClass(check.level))}>
+                <span className="font-800 uppercase tracking-[0.08em]">{check.level}</span>
+                <span className="ml-2">{check.message}</span>
+              </div>
+            ))}
+            {plan.checks.length > 4 && (
+              <div className="text-[10px] text-text-3/55">+{plan.checks.length - 4} more check{plan.checks.length - 4 === 1 ? '' : 's'}</div>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {plan.generatedFiles.slice(0, 5).map((file) => (
+              <span key={`${file.kind}:${file.path}`} className="rounded-full bg-white/[0.04] px-2 py-1 text-[10px] font-700 text-text-3">
+                {file.path}
+              </span>
+            ))}
+            {plan.generatedFiles.length > 5 && (
+              <span className="rounded-full bg-white/[0.04] px-2 py-1 text-[10px] font-700 text-text-3">
+                +{plan.generatedFiles.length - 5}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function QualityWorkspace() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -127,6 +217,8 @@ export function QualityWorkspace() {
   const [selectedSuite, setSelectedSuite] = useState('core')
   const [selectedScenarioId, setSelectedScenarioId] = useState('')
   const [evalBusy, setEvalBusy] = useState<string | null>(null)
+  const [evalEnvironmentPlan, setEvalEnvironmentPlan] = useState<EvalEnvironmentPlan | null>(null)
+  const [evalEnvironmentLoading, setEvalEnvironmentLoading] = useState(false)
   const [approvalBusy, setApprovalBusy] = useState<string | null>(null)
 
   useEffect(() => {
@@ -170,6 +262,27 @@ export function QualityWorkspace() {
     }
   }, [])
 
+  const loadEvalEnvironmentPlan = useCallback(async (opts: { refreshGateway?: boolean } = {}) => {
+    if (!selectedAgentId) {
+      setEvalEnvironmentPlan(null)
+      return
+    }
+    const params = new URLSearchParams({ agentId: selectedAgentId })
+    if (selectedScenarioId) params.set('scenarioId', selectedScenarioId)
+    else if (selectedSuite) params.set('suite', selectedSuite)
+    if (opts.refreshGateway) params.set('refreshGateway', 'true')
+    setEvalEnvironmentLoading(true)
+    try {
+      const plan = await api<EvalEnvironmentPlan>('GET', `/eval/environments?${params.toString()}`, undefined, { timeoutMs: opts.refreshGateway ? 20_000 : 8_000 })
+      setEvalEnvironmentPlan(plan)
+    } catch (err) {
+      setEvalEnvironmentPlan(null)
+      toast.error(err instanceof Error ? err.message : 'Unable to validate eval environment')
+    } finally {
+      setEvalEnvironmentLoading(false)
+    }
+  }, [selectedAgentId, selectedScenarioId, selectedSuite])
+
   useEffect(() => {
     void loadQualityData()
   }, [loadQualityData])
@@ -183,6 +296,10 @@ export function QualityWorkspace() {
   useEffect(() => {
     if (!selectedScenarioId && scenarios[0]) setSelectedScenarioId(scenarios[0].id)
   }, [scenarios, selectedScenarioId])
+
+  useEffect(() => {
+    void loadEvalEnvironmentPlan()
+  }, [loadEvalEnvironmentPlan])
 
   useEffect(() => {
     if (!suites.some((suite) => suite.name === selectedSuite) && suites[0]) {
@@ -208,34 +325,56 @@ export function QualityWorkspace() {
       toast.error('Choose an agent and scenario first')
       return
     }
+    if (evalEnvironmentPlan?.status === 'blocked') {
+      toast.error('Fix the validation environment before running this eval')
+      return
+    }
     setEvalBusy(`scenario:${selectedScenarioId}`)
     try {
-      await api<EvalRun>('POST', '/eval/run', { agentId: selectedAgentId, scenarioId: selectedScenarioId }, { timeoutMs: 180_000 })
+      await api<EvalRun>('POST', '/eval/run', {
+        agentId: selectedAgentId,
+        scenarioId: selectedScenarioId,
+        gatewayProfileId: evalEnvironmentPlan?.target?.gatewayProfileId || null,
+        environmentId: evalEnvironmentPlan?.target?.environmentId || null,
+        refreshGateway: evalEnvironmentPlan?.target?.kind === 'gateway',
+      }, { timeoutMs: 180_000 })
       toast.success('Eval scenario completed')
       await loadQualityData({ silent: true })
+      await loadEvalEnvironmentPlan()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Eval scenario failed')
     } finally {
       setEvalBusy(null)
     }
-  }, [loadQualityData, selectedAgentId, selectedScenarioId])
+  }, [evalEnvironmentPlan, loadEvalEnvironmentPlan, loadQualityData, selectedAgentId, selectedScenarioId])
 
   const runSuite = useCallback(async (suiteName: string) => {
     if (!selectedAgentId) {
       toast.error('Choose an agent first')
       return
     }
+    if (evalEnvironmentPlan?.status === 'blocked') {
+      toast.error('Fix the validation environment before running this suite')
+      return
+    }
     setEvalBusy(`suite:${suiteName}`)
     try {
-      const result = await api<EvalSuiteResult>('POST', '/eval/suite', { agentId: selectedAgentId, suite: suiteName }, { timeoutMs: 300_000 })
+      const result = await api<EvalSuiteResult>('POST', '/eval/suite', {
+        agentId: selectedAgentId,
+        suite: suiteName,
+        gatewayProfileId: evalEnvironmentPlan?.target?.gatewayProfileId || null,
+        environmentId: evalEnvironmentPlan?.target?.environmentId || null,
+        refreshGateway: evalEnvironmentPlan?.target?.kind === 'gateway',
+      }, { timeoutMs: 300_000 })
       toast.success(`Suite completed at ${Math.round(result.percentage)}%`)
       await loadQualityData({ silent: true })
+      await loadEvalEnvironmentPlan()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Eval suite failed')
     } finally {
       setEvalBusy(null)
     }
-  }, [loadQualityData, selectedAgentId])
+  }, [evalEnvironmentPlan, loadEvalEnvironmentPlan, loadQualityData, selectedAgentId])
 
   const actOnApproval = useCallback(async (approval: ApprovalRequest, approved: boolean) => {
     setApprovalBusy(approval.id)
@@ -456,6 +595,11 @@ export function QualityWorkspace() {
                       </div>
                     </div>
                   )}
+                  <EvalEnvironmentPanel
+                    plan={evalEnvironmentPlan}
+                    loading={evalEnvironmentLoading}
+                    onRefresh={() => void loadEvalEnvironmentPlan({ refreshGateway: true })}
+                  />
                   <button
                     type="button"
                     onClick={() => openMissionTemplate('release-candidate-qa')}

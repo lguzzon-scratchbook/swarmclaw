@@ -7,6 +7,9 @@ const SuiteSchema = z.object({
   agentId: z.string().min(1),
   categories: z.array(z.string()).optional(),
   suite: z.string().min(1).optional(),
+  gatewayProfileId: z.string().min(1).nullable().optional(),
+  environmentId: z.string().min(1).nullable().optional(),
+  refreshGateway: z.boolean().optional(),
 })
 
 export async function POST(req: Request) {
@@ -23,6 +26,9 @@ export async function POST(req: Request) {
     const result = await runEvalSuite(parsed.data.agentId, {
       categories: parsed.data.categories,
       suite: parsed.data.suite,
+      gatewayProfileId: parsed.data.gatewayProfileId || null,
+      environmentId: parsed.data.environmentId || null,
+      refreshGateway: parsed.data.refreshGateway === true,
     })
     return NextResponse.json(result)
   } catch (err: unknown) {

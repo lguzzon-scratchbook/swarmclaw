@@ -212,6 +212,24 @@ const CORE_SCENARIOS: EvalScenario[] = [
     ],
     timeoutMs: 60_000,
     tools: ['shell', 'files'],
+    fixtures: [
+      {
+        path: 'package.json',
+        content: JSON.stringify({
+          name: 'swarmclaw-eval-fixture',
+          version: '0.0.0',
+          private: true,
+          dependencies: {
+            '@modelcontextprotocol/sdk': '^1.29.0',
+            zod: '^4.1.13',
+          },
+          devDependencies: {
+            typescript: '^5.9.3',
+            tsx: '^4.20.6',
+          },
+        }, null, 2),
+      },
+    ],
   },
 ]
 

@@ -399,6 +399,16 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.9.6 Highlights
+
+Bundled eval-environment release: validation preflights, deterministic eval workspaces, and clearer operator readiness before spending run budget.
+
+- **Eval validation environments.** `/api/eval/environments` now resolves the selected agent route, gateway target, scenario tools, generated files, and readiness checks before an eval runs.
+- **Workspace manifests.** Eval runs now write `environment.json`, `.env.swarmclaw-eval`, and a task-focused `README.md` into each isolated eval workspace without embedding secrets.
+- **Scenario fixtures.** Eval scenarios can declare fixture files, and the package-analysis scenario now gets a deterministic `package.json` in its workspace.
+- **Fail-fast readiness.** Blocked evals stop before model execution when the agent route, CLI provider, gateway profile, or execution environment is not ready.
+- **Quality UI preflight.** The Eval Lab now shows target status, gateway environment, checks, tools, and generated files next to the selected scenario.
+
 ### v1.9.5 Highlights
 
 Bundled portability release: project-scoped workspace bundles, safer v2 imports, and preserved internal relationships for reusable teams.

@@ -10,6 +10,7 @@ import { executeExecutionChatTurn } from '@/lib/server/execution-engine/chat-tur
 import { WORKSPACE_DIR } from '../data-dir'
 import type { Session } from '@/types'
 import { errorMessage } from '@/lib/shared-utils'
+import { buildEvalEnvironmentPlan, writeEvalEnvironmentWorkspace } from './environment-plan'
 
 export function resolveEvalSessionCwd(runId: string): string {
   const dir = path.join(WORKSPACE_DIR, 'evals', runId)
@@ -17,7 +18,17 @@ export function resolveEvalSessionCwd(runId: string): string {
   return dir
 }
 
-export async function runEvalScenario(scenarioId: string, agentId: string): Promise<EvalRun> {
+export interface RunEvalScenarioOptions {
+  gatewayProfileId?: string | null
+  environmentId?: string | null
+  refreshGateway?: boolean
+}
+
+export async function runEvalScenario(
+  scenarioId: string,
+  agentId: string,
+  options: RunEvalScenarioOptions = {},
+): Promise<EvalRun> {
   const scenario = getScenario(scenarioId)
   if (!scenario) throw new Error(`Unknown eval scenario: ${scenarioId}`)
 
@@ -29,6 +40,13 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
   const sessionId = `eval-${runId}`
   const now = Date.now()
   const sessionCwd = resolveEvalSessionCwd(runId)
+  const environment = await buildEvalEnvironmentPlan({
+    agentId,
+    scenarioId,
+    gatewayProfileId: options.gatewayProfileId || null,
+    environmentId: options.environmentId || null,
+    refreshGateway: options.refreshGateway === true,
+  })
 
   const run: EvalRun = {
     id: runId,
@@ -40,6 +58,34 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
     maxScore: scenario.scoringCriteria.reduce((sum, c) => sum + c.weight, 0),
     details: [],
     sessionId,
+    environment,
+  }
+
+  writeEvalEnvironmentWorkspace({
+    runId,
+    workspacePath: sessionCwd,
+    scenario,
+    plan: environment,
+  })
+
+  if (environment.status === 'blocked') {
+    run.status = 'failed'
+    run.error = environment.checks
+      .filter((check) => check.level === 'error')
+      .map((check) => check.message)
+      .join(' ')
+      || 'Eval environment validation failed.'
+    run.endedAt = Date.now()
+    run.details = environment.checks
+      .filter((check) => check.level !== 'info')
+      .map((check) => ({
+        criterion: check.code,
+        score: 0,
+        maxScore: 0,
+        evidence: check.message,
+      }))
+    saveEvalRun(run)
+    return run
   }
 
   // Create temporary eval session
@@ -114,7 +160,7 @@ export async function runEvalScenario(scenarioId: string, agentId: string): Prom
 
 export async function runEvalSuite(
   agentId: string,
-  opts: { categories?: string[]; suite?: string } = {},
+  opts: { categories?: string[]; suite?: string; gatewayProfileId?: string | null; environmentId?: string | null; refreshGateway?: boolean } = {},
 ): Promise<EvalSuiteResult> {
   let scenarios: EvalScenario[]
   if (opts.suite) {
@@ -130,7 +176,11 @@ export async function runEvalSuite(
 
   const runs: EvalRun[] = []
   for (const scenario of scenarios) {
-    const evalRun = await runEvalScenario(scenario.id, agentId)
+    const evalRun = await runEvalScenario(scenario.id, agentId, {
+      gatewayProfileId: opts.gatewayProfileId || null,
+      environmentId: opts.environmentId || null,
+      refreshGateway: opts.refreshGateway === true,
+    })
     runs.push(evalRun)
   }
 

@@ -7,6 +7,9 @@ import { errorMessage } from '@/lib/shared-utils'
 const RunSchema = z.object({
   scenarioId: z.string().min(1),
   agentId: z.string().min(1),
+  gatewayProfileId: z.string().min(1).nullable().optional(),
+  environmentId: z.string().min(1).nullable().optional(),
+  refreshGateway: z.boolean().optional(),
 })
 
 export async function POST(req: Request) {
@@ -20,7 +23,11 @@ export async function POST(req: Request) {
       )
     }
 
-    const result = await runEvalScenario(parsed.data.scenarioId, parsed.data.agentId)
+    const result = await runEvalScenario(parsed.data.scenarioId, parsed.data.agentId, {
+      gatewayProfileId: parsed.data.gatewayProfileId || null,
+      environmentId: parsed.data.environmentId || null,
+      refreshGateway: parsed.data.refreshGateway === true,
+    })
     return NextResponse.json(result)
   } catch (err: unknown) {
     return NextResponse.json(
