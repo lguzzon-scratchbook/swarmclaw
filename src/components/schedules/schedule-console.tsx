@@ -14,10 +14,10 @@ import { api } from '@/lib/app/api-client'
 import { archiveSchedule, purgeSchedule, restoreSchedule, runSchedule, updateSchedule } from '@/lib/schedules/schedules'
 import { cronToHuman } from '@/lib/schedules/cron-human'
 import { timeAgo, timeUntil } from '@/lib/time-format'
-import type { BoardTask, ProtocolRun, Schedule, ScheduleStatus } from '@/types'
+import type { BoardTask, ProtocolRun, Schedule, ScheduleHistoryEntry, ScheduleStatus } from '@/types'
 import { toast } from 'sonner'
 
-type ScheduleScope = 'live' | 'archived' | 'runs'
+type ScheduleScope = 'live' | 'archived' | 'runs' | 'history'
 type ScheduleFilterStatus = 'all' | ScheduleStatus
 type ScheduleRunStatusFilter = 'all' | Extract<BoardTask['status'], 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'>
 type ScheduleCadenceFilter = 'all' | Schedule['scheduleType']
@@ -34,6 +34,12 @@ type ScheduleConsoleRunRow = {
   agentId: string
   scheduleId: string | null
   scheduleName: string
+}
+type ScheduleHistoryRow = {
+  id: string
+  schedule: Schedule
+  entry: ScheduleHistoryEntry
+  searchText: string
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -137,6 +143,38 @@ function protocolRunPreview(run: ProtocolRun): string {
   if (error) return error.slice(0, 180)
   const goal = typeof run.config?.goal === 'string' ? run.config.goal.trim() : ''
   return (goal || run.title || 'Structured session run').slice(0, 180)
+}
+
+function historyActionLabel(action: ScheduleHistoryEntry['action']): string {
+  switch (action) {
+    case 'created':
+      return 'Created'
+    case 'updated':
+      return 'Updated'
+    case 'archived':
+      return 'Archived'
+    case 'restored':
+      return 'Restored'
+    case 'run_started':
+      return 'Run started'
+    case 'skipped':
+      return 'Skipped'
+    case 'failed':
+      return 'Failed'
+    default:
+      return action
+  }
+}
+
+function historyActionBadge(action: ScheduleHistoryEntry['action']): string {
+  if (action === 'created' || action === 'restored' || action === 'run_started') return badgeClass('completed')
+  if (action === 'failed') return badgeClass('failed')
+  if (action === 'skipped' || action === 'archived') return badgeClass('paused')
+  return badgeClass('running')
+}
+
+function formatHistoryValue(value: string | null | undefined): string {
+  return value == null || value === '' ? 'empty' : value
 }
 
 function ActionButton(
@@ -337,6 +375,42 @@ export function ScheduleConsole() {
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }, [agentFilter, agents, cadenceFilter, projectScopedProtocolRuns, projectScopedRuns, runStatusFilter, schedules, search])
 
+  const filteredHistory = useMemo<ScheduleHistoryRow[]>(() => {
+    const q = search.trim().toLowerCase()
+    return projectScopedSchedules
+      .filter((schedule) => {
+        if (statusFilter !== 'all' && schedule.status !== statusFilter) return false
+        if (cadenceFilter !== 'all' && schedule.scheduleType !== cadenceFilter) return false
+        if (agentFilter !== 'all' && schedule.agentId !== agentFilter) return false
+        return true
+      })
+      .flatMap((schedule) => {
+        const agentName = agents[schedule.agentId]?.name || ''
+        const history = Array.isArray(schedule.history) ? schedule.history : []
+        return history.map((entry) => {
+          const changeText = Array.isArray(entry.changes)
+            ? entry.changes.map((change) => [change.label, change.before, change.after].filter(Boolean).join(' ')).join(' ')
+            : ''
+          return {
+            id: `${schedule.id}:${entry.id}`,
+            schedule,
+            entry,
+            searchText: [
+              schedule.name,
+              schedule.taskPrompt,
+              agentName,
+              entry.summary,
+              entry.actor,
+              historyActionLabel(entry.action),
+              changeText,
+            ].filter(Boolean).join(' ').toLowerCase(),
+          }
+        })
+      })
+      .filter((row) => !q || row.searchText.includes(q))
+      .sort((a, b) => b.entry.at - a.entry.at || b.entry.revision - a.entry.revision)
+  }, [agentFilter, agents, cadenceFilter, projectScopedSchedules, search, statusFilter])
+
   const handleArchive = async (scheduleId: string) => {
     setBusyId(scheduleId)
     try {
@@ -432,7 +506,11 @@ export function ScheduleConsole() {
     setSortBy('nextRunAt')
   }
 
-  const scopeCount = scope === 'runs' ? filteredRuns.length : filteredSchedules.length
+  const scopeCount = scope === 'runs'
+    ? filteredRuns.length
+    : scope === 'history'
+      ? filteredHistory.length
+      : filteredSchedules.length
 
   if (!loaded) {
     return <PageLoader label="Loading schedules..." />
@@ -464,6 +542,7 @@ export function ScheduleConsole() {
                   <FilterPill label="Live" active={scope === 'live'} onClick={() => setScope('live')} />
                   <FilterPill label="Archived" active={scope === 'archived'} onClick={() => setScope('archived')} />
                   <FilterPill label="Runs" active={scope === 'runs'} onClick={() => setScope('runs')} />
+                  <FilterPill label="History" active={scope === 'history'} onClick={() => setScope('history')} />
                 </div>
               </div>
               <div className="w-full lg:max-w-[360px]">
@@ -472,7 +551,11 @@ export function ScheduleConsole() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   onClear={() => setSearch('')}
-                  placeholder={scope === 'runs' ? 'Search runs, schedules, or agents...' : 'Search schedules, agents, or recipients...'}
+                  placeholder={scope === 'runs'
+                    ? 'Search runs, schedules, or agents...'
+                    : scope === 'history'
+                      ? 'Search history, schedules, or changes...'
+                      : 'Search schedules, agents, or recipients...'}
                 />
               </div>
             </div>
@@ -544,7 +627,7 @@ export function ScheduleConsole() {
                 </select>
               </label>
 
-              {scope !== 'runs' ? (
+              {scope !== 'runs' && scope !== 'history' ? (
                 <label className="text-[12px] text-text-3/70">
                   <span className="block mb-1.5 font-600 uppercase tracking-[0.08em] text-[10px]">Delivery</span>
                   <select
@@ -562,16 +645,26 @@ export function ScheduleConsole() {
 
               <label className="text-[12px] text-text-3/70">
                 <span className="block mb-1.5 font-600 uppercase tracking-[0.08em] text-[10px]">Sort</span>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as ScheduleSortBy)}
-                  className="w-full px-3 py-2.5 rounded-[12px] border border-white/[0.06] bg-surface text-text-2"
-                >
-                  <option value="nextRunAt">Next run</option>
-                  <option value="lastRunAt">Last run</option>
-                  <option value="updatedAt">Recently updated</option>
-                  <option value="name">Name</option>
-                </select>
+                {scope === 'history' ? (
+                  <select
+                    value="history"
+                    disabled
+                    className="w-full px-3 py-2.5 rounded-[12px] border border-white/[0.06] bg-surface text-text-3"
+                  >
+                    <option value="history">Newest changes</option>
+                  </select>
+                ) : (
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as ScheduleSortBy)}
+                    className="w-full px-3 py-2.5 rounded-[12px] border border-white/[0.06] bg-surface text-text-2"
+                  >
+                    <option value="nextRunAt">Next run</option>
+                    <option value="lastRunAt">Last run</option>
+                    <option value="updatedAt">Recently updated</option>
+                    <option value="name">Name</option>
+                  </select>
+                )}
               </label>
 
               <div className="flex items-end">
@@ -622,6 +715,71 @@ export function ScheduleConsole() {
                         {sourceSchedule && sourceSchedule.status !== 'archived' && (
                           <ActionButton onClick={() => openSchedule(sourceSchedule.id)}>Open Schedule</ActionButton>
                         )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : scope === 'history' ? (
+            <div className="divide-y divide-white/[0.05]">
+              {filteredHistory.length === 0 ? (
+                <div className="px-5 py-10 text-center text-text-3/60">No schedule history matches the current filters.</div>
+              ) : filteredHistory.map((row) => {
+                const { schedule, entry } = row
+                const agent = agents[schedule.agentId]
+                const changes = Array.isArray(entry.changes) ? entry.changes.slice(0, 4) : []
+                const remainingChanges = Math.max(0, (entry.changes?.length || 0) - changes.length)
+                return (
+                  <div key={row.id} className="px-5 py-4 hover:bg-white/[0.02] transition-colors">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                          <span className={`px-2 py-0.5 rounded-[8px] border text-[10px] font-700 uppercase tracking-[0.08em] ${historyActionBadge(entry.action)}`}>
+                            {historyActionLabel(entry.action)}
+                          </span>
+                          <span className="text-[11px] text-text-3/60 uppercase tracking-[0.08em]">{schedule.scheduleType}</span>
+                          <span className="text-[11px] text-text-3/40 uppercase tracking-[0.08em]">rev {entry.revision}</span>
+                        </div>
+                        <div className="text-[15px] font-600 text-text-2">{schedule.name}</div>
+                        <div className="text-[13px] text-text-3 mt-1 line-clamp-2">{entry.summary}</div>
+                        {changes.length > 0 && (
+                          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {changes.map((change) => (
+                              <div key={`${entry.id}:${change.field}`} className="rounded-[10px] border border-white/[0.06] bg-white/[0.025] px-3 py-2">
+                                <div className="text-[10px] uppercase tracking-[0.08em] text-text-3/50 font-700">{change.label}</div>
+                                <div className="mt-1 text-[12px] text-text-2 break-words">
+                                  <span className="text-text-3">{formatHistoryValue(change.before)}</span>
+                                  <span className="mx-1.5 text-text-3/40">-&gt;</span>
+                                  <span>{formatHistoryValue(change.after)}</span>
+                                </div>
+                              </div>
+                            ))}
+                            {remainingChanges > 0 && (
+                              <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.025] px-3 py-2 text-[12px] text-text-3">
+                                {remainingChanges} more change{remainingChanges === 1 ? '' : 's'}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2 mt-3">
+                          {agent && (
+                            <div className="inline-flex items-center gap-2 rounded-[10px] bg-white/[0.03] px-2.5 py-1.5 text-[12px] text-text-2">
+                              <AgentAvatar
+                                seed={agent.avatarSeed}
+                                avatarUrl={agent.avatarUrl}
+                                name={agent.name}
+                                size={16}
+                              />
+                              <span>{agent.name}</span>
+                            </div>
+                          )}
+                          <span className="text-[12px] text-text-3/60">{timeAgo(entry.at, now)}</span>
+                          <span className="text-[12px] text-text-3/50">Actor: {entry.actor}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <ActionButton onClick={() => openSchedule(schedule.id)}>Open Schedule</ActionButton>
                       </div>
                     </div>
                   </div>

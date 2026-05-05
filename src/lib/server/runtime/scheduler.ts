@@ -13,6 +13,7 @@ import { ensureAgentThreadSession } from '@/lib/server/agents/agent-thread-sessi
 import { hasActiveProtocolRunForSchedule, launchProtocolRunForSchedule } from '@/lib/server/protocols/protocol-service'
 import { hmrSingleton } from '@/lib/shared-utils'
 import { log } from '@/lib/server/logger'
+import { appendScheduleHistoryEntry } from '@/lib/server/schedules/schedule-history'
 import type { Schedule } from '@/types'
 
 const TAG = 'scheduler'
@@ -131,7 +132,13 @@ async function tick(now = Date.now()) {
     const scheduleSignature = getScheduleSignatureKey(schedule)
     if (scheduleSignature && inFlightScheduleKeys.has(scheduleSignature)) {
       advanceSchedule(schedule)
-      upsertSchedule(schedule.id, schedule)
+      upsertSchedule(schedule.id, appendScheduleHistoryEntry(schedule, {
+        now,
+        actor: 'system',
+        action: 'skipped',
+        summary: `Schedule skipped because a run is already in flight: "${schedule.name}"`,
+        metadata: { reason: 'in_flight' },
+      }))
       continue
     }
 
@@ -139,7 +146,19 @@ async function tick(now = Date.now()) {
     if (!agent) {
       log.error(TAG, `Agent ${schedule.agentId} not found for schedule ${schedule.id}`)
       schedule.status = 'failed'
-      upsertSchedule(schedule.id, schedule)
+      upsertSchedule(schedule.id, appendScheduleHistoryEntry(schedule, {
+        now,
+        actor: 'system',
+        action: 'failed',
+        summary: `Schedule failed because agent was not found: "${schedule.name}"`,
+        changes: [{
+          field: 'status',
+          label: 'Status',
+          before: 'active',
+          after: 'failed',
+        }],
+        metadata: { reason: 'agent_not_found' },
+      }))
       pushMainLoopEventToMainSessions({
         type: 'schedule_failed',
         text: `Schedule failed: "${schedule.name}" (${schedule.id}) — agent ${schedule.agentId} not found.`,
@@ -149,7 +168,13 @@ async function tick(now = Date.now()) {
     if (isAgentDisabled(agent)) {
       log.warn(TAG, `Skipping schedule "${schedule.name}" (${schedule.id}) because agent ${schedule.agentId} is disabled`)
       advanceSchedule(schedule)
-      upsertSchedule(schedule.id, schedule)
+      upsertSchedule(schedule.id, appendScheduleHistoryEntry(schedule, {
+        now,
+        actor: 'system',
+        action: 'skipped',
+        summary: `Schedule skipped because agent is disabled: "${schedule.name}"`,
+        metadata: { reason: 'agent_disabled' },
+      }))
       pushMainLoopEventToMainSessions({
         type: 'schedule_skipped',
         text: `Schedule skipped: "${schedule.name}" (${schedule.id}) — agent ${schedule.agentId} is disabled.`,
@@ -162,53 +187,60 @@ async function tick(now = Date.now()) {
     schedule.runNumber = (schedule.runNumber || 0) + 1
     // Compute next run
     advanceSchedule(schedule)
+    const firedSchedule = appendScheduleHistoryEntry(schedule, {
+      now,
+      actor: 'system',
+      action: 'run_started',
+      summary: `Schedule run started: "${schedule.name}"`,
+      metadata: { runNumber: schedule.runNumber || 0 },
+    })
 
-    if (shouldWakeScheduleSession(schedule)) {
+    if (shouldWakeScheduleSession(firedSchedule)) {
       // Wake-only: no board task, just heartbeat the agent
-      upsertSchedule(schedule.id, schedule)
-      const wakeSessionId = resolveScheduleWakeSessionId(schedule, agents as Record<string, unknown>)
+      upsertSchedule(firedSchedule.id, firedSchedule)
+      const wakeSessionId = resolveScheduleWakeSessionId(firedSchedule, agents as Record<string, unknown>)
 
-      const wakeMessage = schedule.message || `Schedule triggered: ${schedule.name}`
+      const wakeMessage = firedSchedule.message || `Schedule triggered: ${firedSchedule.name}`
       pushMainLoopEventToMainSessions({
         type: 'schedule_fired',
-        text: `Schedule fired (wake-only): "${schedule.name}" (${schedule.id}) run #${schedule.runNumber}`,
+        text: `Schedule fired (wake-only): "${firedSchedule.name}" (${firedSchedule.id}) run #${firedSchedule.runNumber}`,
       })
 
       dispatchWake({
         mode: 'immediate',
-        agentId: schedule.agentId,
+        agentId: firedSchedule.agentId,
         ...(wakeSessionId ? { sessionId: wakeSessionId } : {}),
-        eventId: `${schedule.id}:${schedule.runNumber}`,
+        eventId: `${firedSchedule.id}:${firedSchedule.runNumber}`,
         reason: 'schedule',
-        source: `schedule:${schedule.id}`,
+        source: `schedule:${firedSchedule.id}`,
         resumeMessage: wakeMessage,
-        detail: `Run #${schedule.runNumber} (wake-only).`,
+        detail: `Run #${firedSchedule.runNumber} (wake-only).`,
       })
-    } else if (shouldLaunchScheduleProtocol(schedule)) {
-      upsertSchedule(schedule.id, schedule)
-      if (hasActiveProtocolRunForSchedule(schedule.id)) continue
-      const run = launchProtocolRunForSchedule(schedule)
+    } else if (shouldLaunchScheduleProtocol(firedSchedule)) {
+      upsertSchedule(firedSchedule.id, firedSchedule)
+      if (hasActiveProtocolRunForSchedule(firedSchedule.id)) continue
+      const run = launchProtocolRunForSchedule(firedSchedule)
       pushMainLoopEventToMainSessions({
         type: 'schedule_fired',
-        text: `Schedule fired: "${schedule.name}" (${schedule.id}) run #${schedule.runNumber} — structured session ${run.id}`,
+        text: `Schedule fired: "${firedSchedule.name}" (${firedSchedule.id}) run #${firedSchedule.runNumber} — structured session ${run.id}`,
       })
     } else {
       // Default task mode: create a board task
       const { taskId } = prepareScheduledTaskRun({
-        schedule,
+        schedule: firedSchedule,
         tasks,
         now,
         scheduleSignature,
       })
 
       upsertTask(taskId, tasks[taskId])
-      upsertSchedule(schedule.id, schedule)
+      upsertSchedule(firedSchedule.id, firedSchedule)
 
       enqueueTask(taskId)
       if (scheduleSignature) inFlightScheduleKeys.add(scheduleSignature)
       pushMainLoopEventToMainSessions({
         type: 'schedule_fired',
-        text: `Schedule fired: "${schedule.name}" (${schedule.id}) run #${schedule.runNumber} — task ${taskId}`,
+        text: `Schedule fired: "${firedSchedule.name}" (${firedSchedule.id}) run #${firedSchedule.runNumber} — task ${taskId}`,
       })
     }
   }

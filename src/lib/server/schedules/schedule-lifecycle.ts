@@ -18,6 +18,7 @@ import {
 } from '@/lib/server/storage'
 import { notify } from '@/lib/server/ws-hub'
 import { getScheduleClusterIds } from '@/lib/server/schedules/schedule-service'
+import { appendScheduleHistoryEntry } from '@/lib/server/schedules/schedule-history'
 
 type RestorableScheduleStatus = Exclude<ScheduleStatus, 'archived'>
 
@@ -205,7 +206,7 @@ export function archiveScheduleCluster(
     const previousStatus = schedule.status === 'archived'
       ? (schedule.archivedFromStatus || 'active')
       : schedule.status
-    schedules[id] = {
+    const archivedSchedule: Schedule = {
       ...cloneSchedule(schedule),
       status: 'archived',
       archivedAt: schedule.archivedAt || now,
@@ -213,6 +214,24 @@ export function archiveScheduleCluster(
       nextRunAt: undefined,
       updatedAt: now,
     }
+    schedules[id] = appendScheduleHistoryEntry(archivedSchedule, {
+      now,
+      actor: opts.actor?.actor || 'system',
+      actorId: opts.actor?.actorId || null,
+      action: 'archived',
+      summary: `Schedule archived: "${schedule.name}"`,
+      changes: [{
+        field: 'status',
+        label: 'Status',
+        before: previousStatus,
+        after: 'archived',
+      }],
+      metadata: {
+        cancelledTaskCount: cancelledTaskIds.length,
+        removedQueuedTaskCount: removedQueuedTaskIds.length,
+        abortedRunSessionCount: abortedRunSessionIds.length,
+      },
+    })
   }
 
   if (tasksDirty) {
@@ -289,7 +308,7 @@ export function restoreArchivedScheduleCluster(
       : restoreStatus === 'completed' || restoreStatus === 'failed'
         ? undefined
         : schedule.nextRunAt
-    schedules[id] = {
+    const restoredSchedule: Schedule = {
       ...cloneSchedule(schedule),
       status: restoreStatus,
       archivedAt: null,
@@ -297,6 +316,19 @@ export function restoreArchivedScheduleCluster(
       nextRunAt,
       updatedAt: now,
     }
+    schedules[id] = appendScheduleHistoryEntry(restoredSchedule, {
+      now,
+      actor: opts.actor?.actor || 'system',
+      actorId: opts.actor?.actorId || null,
+      action: 'restored',
+      summary: `Schedule restored: "${schedule.name}"`,
+      changes: [{
+        field: 'status',
+        label: 'Status',
+        before: 'archived',
+        after: restoreStatus,
+      }],
+    })
     restoredIds.push(id)
   }
 

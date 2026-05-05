@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test, { afterEach } from 'node:test'
 
 import { DELETE as deleteScheduleRoute, PUT as updateSchedule } from './route'
+import { GET as getScheduleHistory } from './history/route'
 import { loadAgents, loadSchedules, saveAgents, saveSchedules } from '@/lib/server/storage'
 
 const originalAgents = loadAgents()
@@ -84,7 +85,7 @@ test('PUT /api/schedules/[id] pauses equivalent reminder schedules together', as
   assert.equal(schedules.two.status, 'paused')
 })
 
-test('DELETE /api/schedules/[id] deletes equivalent reminder schedules together', async () => {
+test('DELETE /api/schedules/[id] archives equivalent reminder schedules together', async () => {
   seedAgent('schedule-route-agent-delete')
   const now = Date.now()
   saveSchedules({
@@ -123,6 +124,54 @@ test('DELETE /api/schedules/[id] deletes equivalent reminder schedules together'
 
   assert.equal(response.status, 200)
   const payload = await response.json() as Record<string, unknown>
-  assert.deepEqual(new Set(payload.deletedIds as string[]), new Set(['one', 'two']))
-  assert.deepEqual(loadSchedules(), {})
+  assert.deepEqual(new Set(payload.archivedIds as string[]), new Set(['one', 'two']))
+  const schedules = loadSchedules()
+  assert.equal(schedules.one.status, 'archived')
+  assert.equal(schedules.two.status, 'archived')
+  assert.equal(schedules.one.history?.[0]?.action, 'archived')
+})
+
+test('GET /api/schedules/[id]/history returns revision history', async () => {
+  const now = Date.now()
+  saveSchedules({
+    one: {
+      id: 'one',
+      name: 'History Schedule',
+      agentId: 'schedule-route-agent-history',
+      taskPrompt: 'Report changes',
+      scheduleType: 'interval',
+      intervalMs: 86_400_000,
+      status: 'active',
+      revision: 2,
+      history: [{
+        id: 'history-2',
+        at: now,
+        actor: 'user',
+        action: 'updated',
+        revision: 2,
+        summary: 'Schedule updated: "History Schedule"',
+        changes: [{
+          field: 'status',
+          label: 'Status',
+          before: 'paused',
+          after: 'active',
+        }],
+      }],
+      createdAt: now,
+      updatedAt: now,
+    },
+  })
+
+  const response = await getScheduleHistory(
+    new Request('http://local/api/schedules/one/history', { method: 'GET' }),
+    routeParams('one'),
+  )
+
+  assert.equal(response.status, 200)
+  const payload = await response.json() as Record<string, unknown>
+  assert.equal(payload.scheduleId, 'one')
+  assert.equal(payload.revision, 2)
+  const history = payload.history as Array<Record<string, unknown>>
+  assert.equal(history.length, 1)
+  assert.equal(history[0].action, 'updated')
 })

@@ -420,6 +420,7 @@ const COMMAND_GROUPS = {
       list: { description: 'List schedules', method: 'GET', path: '/schedules' },
       create: { description: 'Create schedule', method: 'POST', path: '/schedules' },
       get: { description: 'Get schedule by id (from list)', virtualGet: true, collectionPath: '/schedules', params: ['id'] },
+      history: { description: 'Get schedule revision history', method: 'GET', path: '/schedules/:id/history', params: ['id'] },
       update: { description: 'Update schedule', method: 'PUT', path: '/schedules/:id', params: ['id'] },
       delete: { description: 'Delete schedule', method: 'DELETE', path: '/schedules/:id', params: ['id'] },
       run: { description: 'Trigger schedule immediately', method: 'POST', path: '/schedules/:id/run', params: ['id'] },

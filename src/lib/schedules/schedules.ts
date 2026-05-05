@@ -1,5 +1,5 @@
 import { api } from '@/lib/app/api-client'
-import type { Schedule } from '@/types'
+import type { Schedule, ScheduleHistoryEntry } from '@/types'
 
 export interface ScheduleArchiveResponse {
   ok: boolean
@@ -17,6 +17,12 @@ export interface ScheduleRestoreResponse extends Schedule {
 export interface SchedulePurgeResponse {
   ok: boolean
   purgedIds: string[]
+}
+
+export interface ScheduleHistoryResponse {
+  scheduleId: string
+  revision: number
+  history: ScheduleHistoryEntry[]
 }
 
 export const fetchSchedules = (includeArchived = false) =>
@@ -42,3 +48,6 @@ export const purgeSchedule = (id: string) =>
 
 export const runSchedule = (id: string) =>
   api<{ ok: boolean; queued?: boolean; reason?: string; taskId?: string; runNumber?: number }>('POST', `/schedules/${id}/run`)
+
+export const fetchScheduleHistory = (id: string) =>
+  api<ScheduleHistoryResponse>('GET', `/schedules/${id}/history`)

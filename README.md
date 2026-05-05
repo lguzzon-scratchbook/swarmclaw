@@ -399,6 +399,15 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.9.9 Highlights
+
+Schedule revision timeline release: schedule edits, lifecycle changes, and run evidence now stay inspectable from UI, API, and CLI surfaces.
+
+- **Schedule history ledger.** Schedules now carry a bounded revision history for create, update, archive, restore, skipped, failed, and run-started events.
+- **History console.** The Schedule Console adds a searchable History tab with revision badges, actor labels, and before/after change summaries.
+- **API and CLI access.** `GET /api/schedules/:id/history` and `swarmclaw schedules history <id>` expose the same timeline for scripts and operator audits.
+- **Runtime evidence.** Manual runs and scheduler-fired runs append history entries, while storage normalization caps old entries and keeps legacy schedules compatible.
+
 ### v1.9.8 Highlights
 
 Bundled release-readiness release: a single operator report that combines eval gates, operations blockers, approvals, and runtime readiness.

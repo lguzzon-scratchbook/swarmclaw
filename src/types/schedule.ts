@@ -3,6 +3,26 @@ import type { ExtensionManagedResourceMarker } from './extension'
 export type ScheduleType = 'cron' | 'interval' | 'once'
 export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'failed' | 'archived'
 export type ScheduleTaskMode = 'task' | 'wake_only' | 'protocol'
+export type ScheduleHistoryAction = 'created' | 'updated' | 'archived' | 'restored' | 'run_started' | 'skipped' | 'failed'
+
+export interface ScheduleHistoryChange {
+  field: string
+  label: string
+  before: string | null
+  after: string | null
+}
+
+export interface ScheduleHistoryEntry {
+  id: string
+  at: number
+  actor: string
+  actorId?: string | null
+  action: ScheduleHistoryAction
+  revision: number
+  summary: string
+  changes?: ScheduleHistoryChange[]
+  metadata?: Record<string, string | number | boolean | null>
+}
 
 export interface Schedule {
   id: string
@@ -57,6 +77,8 @@ export interface Schedule {
   followupSenderId?: string | null
   followupSenderName?: string | null
   managedByExtension?: ExtensionManagedResourceMarker | null
+  revision?: number
+  history?: ScheduleHistoryEntry[]
   createdAt: number
   updatedAt?: number
 }

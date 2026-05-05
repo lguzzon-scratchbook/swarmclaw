@@ -609,6 +609,14 @@ export function buildProgram(): Command {
     })
 
   schedules
+    .command('history')
+    .description('Get schedule revision history')
+    .argument('<id>', 'Schedule id')
+    .action(async function (id: string) {
+      await runWithHandler(this as Command, (ctx) => apiRequest(ctx, 'GET', `/schedules/${encodeURIComponent(id)}/history`))
+    })
+
+  schedules
     .command('create')
     .description('Create schedule')
     .requiredOption('--name <name>', 'Schedule name')

@@ -18,6 +18,7 @@ import { loadTasks, saveTask } from '@/lib/server/tasks/task-repository'
 import { pushMainLoopEventToMainSessions } from '@/lib/server/agents/main-agent-loop'
 import { WORKSPACE_DIR } from '@/lib/server/data-dir'
 import { notify } from '@/lib/server/ws-hub'
+import { appendScheduleHistoryEntry } from '@/lib/server/schedules/schedule-history'
 import type { Schedule } from '@/types'
 import type { ScheduleLike } from '@/lib/schedules/schedule-dedupe'
 import type { ServiceResult } from '@/lib/server/service-result'
@@ -55,6 +56,7 @@ export function createScheduleFromRoute(body: Record<string, unknown>): ServiceR
     schedules,
     now,
     cwd: WORKSPACE_DIR,
+    historyActor: { actor: 'user' },
   })
   if (!prepared.ok) {
     return serviceFail(400, prepared.error)
@@ -125,6 +127,7 @@ export function updateScheduleFromRoute(id: string, body: Record<string, unknown
     agentExists: (agentId) => Boolean(agents[agentId]),
     propagateEquivalentStatuses: true,
     propagationSource: current as unknown as Record<string, unknown>,
+    historyActor: { actor: 'user' },
   })
   if (!prepared.ok) {
     return serviceFail(400, errorMessage(prepared.error))
@@ -216,7 +219,14 @@ export function runScheduleNow(id: string): ServiceResult<Record<string, unknown
     text: `Schedule fired manually: "${schedule.name}" (${schedule.id}) run #${schedule.runNumber} — task ${taskId}`,
   })
   schedule.lastRunAt = now
-  upsertSchedule(schedule.id, schedule)
+  const scheduleWithHistory = appendScheduleHistoryEntry(schedule, {
+    now,
+    actor: 'user',
+    action: 'run_started',
+    summary: `Manual schedule run queued: "${schedule.name}"`,
+    metadata: { taskId, runNumber: schedule.runNumber || 0 },
+  })
+  upsertSchedule(schedule.id, scheduleWithHistory)
   logActivity({
     entityType: 'schedule',
     entityId: schedule.id,

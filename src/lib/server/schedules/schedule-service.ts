@@ -9,6 +9,11 @@ import type { Schedule, ScheduleStatus } from '@/types'
 import { dedup } from '@/lib/shared-utils'
 
 import { normalizeSchedulePayload } from '@/lib/server/schedules/schedule-normalization'
+import {
+  applyScheduleCreationHistory,
+  applyScheduleUpdateHistory,
+  type ScheduleHistoryActor,
+} from '@/lib/server/schedules/schedule-history'
 
 export interface ScheduleCreatorScope {
   agentId?: string | null
@@ -91,6 +96,7 @@ export interface PrepareScheduleCreateOptions {
   dedupeCreatorScope?: ScheduleCreatorScope | null
   followupTarget?: Partial<Schedule>
   createId?: () => string
+  historyActor?: ScheduleHistoryActor | null
 }
 
 export type PrepareScheduleCreateResult =
@@ -150,7 +156,16 @@ export function prepareScheduleCreate(options: PrepareScheduleCreateOptions): Pr
       nextSchedule.status = nextStatus
       changed = true
     }
-    if (changed) nextSchedule.updatedAt = options.now
+    if (changed) {
+      nextSchedule.updatedAt = options.now
+      const withHistory = applyScheduleUpdateHistory(duplicate as Schedule, nextSchedule as Schedule, {
+        now: options.now,
+        actor: options.historyActor?.actor || 'system',
+        actorId: options.historyActor?.actorId || null,
+        summary: `Schedule updated from duplicate create request: "${nextSchedule.name}"`,
+      })
+      Object.assign(nextSchedule, withHistory)
+    }
     return {
       ok: true,
       kind: 'duplicate',
@@ -168,7 +183,7 @@ export function prepareScheduleCreate(options: PrepareScheduleCreateOptions): Pr
         createdInSessionId: options.creatorScope.sessionId || null,
       }
     : {}
-  const schedule = {
+  const schedule = applyScheduleCreationHistory({
     id,
     ...candidate,
     ...creatorFields,
@@ -178,7 +193,11 @@ export function prepareScheduleCreate(options: PrepareScheduleCreateOptions): Pr
     lastRunAt: undefined,
     createdAt: options.now,
     updatedAt: options.now,
-  } as Schedule
+  } as Schedule, {
+    now: options.now,
+    actor: options.historyActor?.actor || 'system',
+    actorId: options.historyActor?.actorId || null,
+  })
 
   return {
     ok: true,
@@ -199,6 +218,7 @@ export interface PrepareScheduleUpdateOptions {
   agentExists?: (agentId: string) => boolean
   propagateEquivalentStatuses?: boolean
   propagationSource?: Record<string, unknown> | null
+  historyActor?: ScheduleHistoryActor | null
 }
 
 export type PrepareScheduleUpdateResult =
@@ -243,7 +263,13 @@ export function prepareScheduleUpdate(options: PrepareScheduleUpdateOptions): Pr
     taskPrompt: nextSchedule.taskPrompt,
   })
 
-  const entries: Array<[string, ScheduleLike]> = [[options.id, nextSchedule]]
+  const scheduleWithHistory = applyScheduleUpdateHistory(options.current as Schedule, nextSchedule as Schedule, {
+    now: options.now,
+    actor: options.historyActor?.actor || 'system',
+    actorId: options.historyActor?.actorId || null,
+  })
+
+  const entries: Array<[string, ScheduleLike]> = [[options.id, scheduleWithHistory]]
   const normalizedStatus = normalizeScheduleStatus(nextSchedule.status)
   if (options.propagateEquivalentStatuses && (normalizedStatus === 'paused' || normalizedStatus === 'completed' || normalizedStatus === 'failed' || normalizedStatus === 'archived')) {
     const relatedIds = findRelatedScheduleIds(
@@ -254,17 +280,23 @@ export function prepareScheduleUpdate(options: PrepareScheduleUpdateOptions): Pr
     for (const relatedId of relatedIds) {
       const related = options.schedules[relatedId]
       if (!related) continue
-      entries.push([relatedId, {
+      const relatedNext = {
         ...related,
         status: normalizedStatus,
         updatedAt: options.now,
-      }])
+      } as Schedule
+      entries.push([relatedId, applyScheduleUpdateHistory(related as Schedule, relatedNext, {
+        now: options.now,
+        actor: options.historyActor?.actor || 'system',
+        actorId: options.historyActor?.actorId || null,
+        summary: `Schedule status updated with related schedule: "${scheduleWithHistory.name}"`,
+      })])
     }
   }
 
   return {
     ok: true,
-    schedule: nextSchedule,
+    schedule: scheduleWithHistory,
     entries,
     affectedScheduleIds: dedup(entries.map(([id]) => id)),
   }

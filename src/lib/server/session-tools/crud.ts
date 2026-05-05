@@ -672,6 +672,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                     sessionId: ctx?.sessionId || null,
                   },
                   followupTarget: deriveScheduleFollowupTarget(ctx?.sessionId || null),
+                  historyActor: { actor: ctx?.agentId ? 'agent' : 'user', actorId: ctx?.agentId || null },
                 })
                 if (!prepared.ok) return prepared.error
                 if (prepared.kind === 'duplicate') {
@@ -880,6 +881,7 @@ export function buildCrudTools(bctx: ToolBuildContext): StructuredToolInterface[
                   agentExists: (agentId) => Boolean(managedAgents?.[agentId]),
                   propagateEquivalentStatuses: true,
                   propagationSource: previousEntry as Record<string, unknown>,
+                  historyActor: { actor: ctx?.agentId ? 'agent' : 'user', actorId: ctx?.agentId || null },
                 })
                 if (!prepared.ok) return prepared.error
                 for (const [scheduleId, schedule] of prepared.entries) {

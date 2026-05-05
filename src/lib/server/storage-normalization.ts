@@ -2,6 +2,7 @@ import { normalizeCapabilitySelection } from '@/lib/capability-selection'
 import { normalizeAgentSandboxConfig } from '@/lib/agent-sandbox-defaults'
 import { isDirectConnectorSession } from '@/lib/server/connectors/session-kind'
 import { WORKER_ONLY_PROVIDER_IDS } from '@/lib/provider-sets'
+import { normalizeScheduleHistory } from '@/lib/server/schedules/schedule-history'
 
 type StoredObject = Record<string, unknown>
 
@@ -202,6 +203,20 @@ function normalizeStoredScheduleRecord(value: unknown, loadItem: CollectionItemL
     if (ownerTarget.senderName) schedule.followupSenderName = ownerTarget.senderName
     else delete schedule.followupSenderName
     delete schedule.followupThreadId
+  }
+
+  const history = normalizeScheduleHistory(schedule.history)
+  if (history.length > 0) {
+    schedule.history = history
+    const revision = typeof schedule.revision === 'number' && Number.isFinite(schedule.revision)
+      ? Math.trunc(schedule.revision)
+      : 0
+    schedule.revision = Math.max(revision, ...history.map((entry) => entry.revision))
+  } else {
+    delete schedule.history
+    if (typeof schedule.revision !== 'number' || !Number.isFinite(schedule.revision) || schedule.revision <= 0) {
+      delete schedule.revision
+    }
   }
 
   return schedule

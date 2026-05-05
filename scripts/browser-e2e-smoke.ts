@@ -284,7 +284,7 @@ async function expectAgentCard(baseUrl: string): Promise<void> {
 }
 
 async function waitForPageText(page: Page, url: string, options: { anyText: string[] }): Promise<void> {
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS })
+  await page.goto(url, { waitUntil: 'commit', timeout: PAGE_TIMEOUT_MS })
   await page.waitForSelector('body', { timeout: PAGE_TIMEOUT_MS })
   await page.waitForFunction(
     (needles) => {
@@ -315,12 +315,19 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
 
   try {
     const context = await createContext(browser, baseUrl, auth)
-    const page = await context.newPage()
-    page.on('pageerror', (err) => pageErrors.push(err.message))
+    const newSmokePage = async () => {
+      const nextPage = await context.newPage()
+      nextPage.on('pageerror', (err) => pageErrors.push(err.message))
+      return nextPage
+    }
 
+    let page = await newSmokePage()
     await smokeStep('home page loads', () => waitForPageText(page, '/home', {
       anyText: ['Launchpad', 'SwarmClaw', 'Pick a path'],
     }))
+    await page.close()
+
+    page = await newSmokePage()
     await smokeStep('quality overview loads', () => waitForPageText(page, '/quality', {
       anyText: ['Quality', 'Operator Quality Center', 'Eval Lab', 'Approval Desk'],
     }))
@@ -328,6 +335,9 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
       const text = (document.body?.innerText || '').toLowerCase()
       return text.includes('release readiness') && text.includes('ship gate report')
     }, { timeout: PAGE_TIMEOUT_MS }))
+    await page.close()
+
+    page = await newSmokePage()
     await smokeStep('eval lab tab loads', () => waitForPageText(page, '/quality?tab=evals', {
       anyText: ['Eval Lab'],
     }))
@@ -335,6 +345,17 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
       const text = document.body?.innerText || ''
       return text.includes('Validation environment') && text.includes('Regression gate')
     }, { timeout: PAGE_TIMEOUT_MS }))
+    await page.close()
+
+    page = await newSmokePage()
+    await smokeStep('schedule history tab is available', async () => {
+      await waitForPageText(page, '/schedules', { anyText: ['Schedule Console', 'SCHEDULE CONSOLE'] })
+      await page.waitForFunction(() => {
+        const text = (document.body?.innerText || '').toLowerCase()
+        return text.includes('schedule console') && text.includes('history')
+      }, { timeout: PAGE_TIMEOUT_MS })
+    })
+    await page.close()
 
     const taskRes = await fetchWithTimeout(new URL('/api/tasks', baseUrl).toString(), {
       method: 'POST',
@@ -355,6 +376,7 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
       throw new Error(`Could not create task workspace smoke record: ${taskRes.status} ${await taskRes.text().catch(() => '')}`)
     }
 
+    page = await newSmokePage()
     await smokeStep('task board shows created workspace task', () => waitForPageText(page, '/tasks?taskView=all', {
       anyText: ['E2E task workspace'],
     }))
@@ -362,6 +384,7 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
       const text = document.body?.innerText || ''
       return text.includes('E2E task workspace') && text.includes('workspace') && text.includes('ready')
     }, { timeout: PAGE_TIMEOUT_MS }))
+    await page.close()
 
     if (pageErrors.length > 0) {
       throw new Error(`Browser page errors:\n${pageErrors.join('\n')}`)
