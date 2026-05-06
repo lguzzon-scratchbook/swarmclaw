@@ -29,7 +29,17 @@ import {
 } from '@/lib/server/tasks/task-execution-workspace'
 import { resolveTaskAgentFromDescription } from '@/lib/server/tasks/task-mention'
 import {
+  describeTaskExecutionPolicy,
+  isTaskExecutionPolicySatisfied,
+  normalizeTaskExecutionPolicy,
+  recordTaskExecutionPolicyDecision,
+  syncTaskExecutionPolicyState,
+  taskExecutionPolicyBlockReason,
+  type RecordTaskExecutionPolicyDecisionInput,
+} from '@/lib/server/tasks/task-execution-policy'
+import {
   applyTaskPatch,
+  normalizeTaskStatusInput,
   prepareTaskCreation,
   resolveAssignmentWorkflowStateTransition,
 } from '@/lib/server/tasks/task-service'
@@ -108,6 +118,28 @@ export function updateTaskFromRoute(id: string, body: Record<string, unknown>): 
     }
   }
 
+  const requestedStatus = normalizeTaskStatusInput(body.status, prevStatus)
+  if (Object.prototype.hasOwnProperty.call(body, 'status') && requestedStatus === 'completed') {
+    const policyForCompletion = Object.prototype.hasOwnProperty.call(body, 'executionPolicy')
+      ? normalizeTaskExecutionPolicy(body.executionPolicy, now)
+      : normalizeTaskExecutionPolicy(tasks[id].executionPolicy, now)
+    const stateForCompletion = syncTaskExecutionPolicyState(
+      policyForCompletion,
+      tasks[id].executionPolicyState,
+      now,
+    )
+    if (!isTaskExecutionPolicySatisfied({
+      executionPolicy: policyForCompletion,
+      executionPolicyState: stateForCompletion,
+    })) {
+      const reason = taskExecutionPolicyBlockReason({
+        executionPolicy: policyForCompletion,
+        executionPolicyState: stateForCompletion,
+      }) || 'Execution policy is not complete.'
+      return serviceFail(409, reason)
+    }
+  }
+
   if (body.appendComment) {
     const appendedComment = normalizeTaskCommentInput(body.appendComment)
     if (!appendedComment) {
@@ -128,6 +160,12 @@ export function updateTaskFromRoute(id: string, body: Record<string, unknown>): 
     })
   }
   tasks[id].id = id
+  tasks[id].executionPolicy = normalizeTaskExecutionPolicy(tasks[id].executionPolicy, now)
+  tasks[id].executionPolicyState = syncTaskExecutionPolicyState(
+    tasks[id].executionPolicy,
+    tasks[id].executionPolicyState,
+    now,
+  )
 
   if (typeof body.parentTaskId === 'string' || body.parentTaskId === null) {
     const oldParentId = tasks[id].parentTaskId
@@ -250,6 +288,54 @@ export function updateTaskFromRoute(id: string, body: Record<string, unknown>): 
 
   notify('tasks')
   return serviceOk(tasks[id])
+}
+
+export function decideTaskExecutionPolicyFromRoute(
+  id: string,
+  body: Record<string, unknown>,
+): ServiceResult<{
+  task: BoardTask
+  policy: BoardTask['executionPolicy']
+  state: BoardTask['executionPolicyState']
+  summary: ReturnType<typeof describeTaskExecutionPolicy>
+}> {
+  const task = loadTask(id)
+  if (!task) return serviceFail(404, 'Task not found')
+  const input: RecordTaskExecutionPolicyDecisionInput = {
+    action: body.action === 'request_changes' || body.action === 'reset' ? body.action : 'approve',
+    stageId: typeof body.stageId === 'string' ? body.stageId : null,
+    actor: typeof body.actor === 'string' ? body.actor : 'operator',
+    note: typeof body.note === 'string' ? body.note : null,
+  }
+  const decided = recordTaskExecutionPolicyDecision(task, input)
+  if (!decided.ok) return serviceFail(decided.status, decided.error)
+  saveTask(id, decided.task)
+  const stageTitle = decided.decision
+    ? decided.task.executionPolicy?.stages.find((stage) => stage.id === decided.decision?.stageId)?.title || decided.decision.stageId
+    : input.stageId || decided.task.executionPolicyState?.currentStageId || 'policy'
+  const actionLabel = input.action === 'request_changes'
+    ? 'changes requested'
+    : input.action === 'reset'
+      ? 'reset'
+      : 'approved'
+  logActivity({
+    entityType: 'task',
+    entityId: id,
+    action: input.action === 'request_changes' ? 'rejected' : input.action === 'approve' ? 'approved' : 'updated',
+    actor: input.actor || 'operator',
+    summary: `Execution policy ${actionLabel}: "${decided.task.title}" (${stageTitle})`,
+  })
+  pushMainLoopEventToMainSessions({
+    type: 'task_updated',
+    text: `Task "${decided.task.title}" (${id}) execution policy ${actionLabel} at ${stageTitle}.`,
+  })
+  notify('tasks')
+  return serviceOk({
+    task: decided.task,
+    policy: decided.task.executionPolicy || null,
+    state: decided.task.executionPolicyState || null,
+    summary: describeTaskExecutionPolicy(decided.task),
+  })
 }
 
 export function archiveTaskFromRoute(id: string): ServiceResult<BoardTask> {

@@ -21,6 +21,58 @@ export interface TaskQualityGateConfig {
   requireReport?: boolean
 }
 
+export type TaskExecutionPolicyStageKind = 'review' | 'approval' | 'verification'
+export type TaskExecutionPolicyMode = 'before_completion' | 'advisory'
+
+export interface TaskExecutionPolicyStage {
+  id: string
+  title: string
+  kind: TaskExecutionPolicyStageKind
+  description?: string | null
+  actorHint?: string | null
+  requiredDecisions?: number
+}
+
+export interface TaskExecutionPolicy {
+  enabled?: boolean
+  mode?: TaskExecutionPolicyMode
+  stages: TaskExecutionPolicyStage[]
+  createdAt?: number
+  updatedAt?: number
+}
+
+export type TaskExecutionPolicyDecisionAction = 'approved' | 'changes_requested' | 'reset'
+
+export interface TaskExecutionPolicyDecision {
+  id: string
+  stageId: string
+  action: TaskExecutionPolicyDecisionAction
+  actor: string
+  note?: string | null
+  decidedAt: number
+}
+
+export type TaskExecutionPolicyStageStatus = 'pending' | 'waiting' | 'approved' | 'changes_requested'
+export type TaskExecutionPolicyStatus = 'disabled' | 'waiting' | 'approved' | 'changes_requested' | 'completed'
+
+export interface TaskExecutionPolicyStageState {
+  id: string
+  status: TaskExecutionPolicyStageStatus
+  requiredDecisions: number
+  approvedDecisionCount: number
+  lastDecisionAt?: number | null
+}
+
+export interface TaskExecutionPolicyState {
+  status: TaskExecutionPolicyStatus
+  currentStageId?: string | null
+  currentStageIndex?: number | null
+  stages: TaskExecutionPolicyStageState[]
+  decisions: TaskExecutionPolicyDecision[]
+  updatedAt: number
+  completedAt?: number | null
+}
+
 export type TaskExecutionWorkspaceMode = 'task' | 'project' | 'custom'
 
 export interface TaskPreviewLink {
@@ -67,6 +119,8 @@ export interface TaskRuntimeContextPacket {
   blocks?: string[]
   tags?: string[]
   upstreamResults?: BoardTask['upstreamResults']
+  executionPolicy?: TaskExecutionPolicy | null
+  executionPolicyState?: TaskExecutionPolicyState | null
 }
 
 export interface TaskExecutionWorkspace {
@@ -218,6 +272,8 @@ export interface BoardTask {
   // Dedup fingerprint
   fingerprint?: string
   qualityGate?: TaskQualityGateConfig | null
+  executionPolicy?: TaskExecutionPolicy | null
+  executionPolicyState?: TaskExecutionPolicyState | null
   // Competitive task claiming (pool mode)
   assignmentMode?: 'direct' | 'pool'
   poolCandidateAgentIds?: string[]
@@ -306,6 +362,12 @@ export interface TaskHandoffPacket {
   qualityGate: {
     enabled: boolean
     config: TaskQualityGateConfig | null
+    checks: TaskHandoffCheck[]
+  }
+  executionPolicy: {
+    enabled: boolean
+    config: TaskExecutionPolicy | null
+    state: TaskExecutionPolicyState | null
     checks: TaskHandoffCheck[]
   }
   outputs: {

@@ -399,6 +399,15 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.9.11 Highlights
+
+Task execution policy release: operators can attach ordered review, approval, and verification stages to board tasks, record decisions, and block premature completion until required stages clear.
+
+- **Task execution policies.** Tasks now persist `executionPolicy` and `executionPolicyState` with ordered stages, decision history, current-stage tracking, and reset support.
+- **Completion guardrails.** `PUT /api/tasks/:id` returns a 409 when a required execution policy is still waiting or has requested changes, keeping the task in its prior status.
+- **Policy API and CLI.** `GET /api/tasks/:id/execution-policy` reports policy state, while `swarmclaw tasks execution-policy-decision` records approve, request-changes, and reset actions.
+- **Operator UI and handoffs.** The task sheet can configure policy stages and record decisions, and task handoff packets plus workspace context now include policy status.
+
 ### v1.9.10 Highlights
 
 Task handoff release: operators can package task state, readiness, workspace context, dependencies, outputs, and resume handles into a shareable packet before continuing work.

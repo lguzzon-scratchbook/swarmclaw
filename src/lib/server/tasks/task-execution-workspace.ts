@@ -277,6 +277,8 @@ function buildTaskRuntimeContext(params: {
     blocks: task.blocks,
     tags: task.tags,
     upstreamResults: task.upstreamResults,
+    executionPolicy: task.executionPolicy || null,
+    executionPolicyState: task.executionPolicyState || null,
   }
 }
 

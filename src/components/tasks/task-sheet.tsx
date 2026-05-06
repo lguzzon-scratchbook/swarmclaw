@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, ClipboardCopy, ExternalLink, FileText, FolderOpen, PlayCircle, Save } from 'lucide-react'
+import { Activity, CheckCircle2, ClipboardCopy, ExternalLink, FileText, FolderOpen, PlayCircle, RotateCcw, Save, XCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAppStore } from '@/stores/use-app-store'
@@ -10,6 +10,7 @@ import { useAgentsQuery } from '@/features/agents/queries'
 import {
   useAppendTaskCommentMutation,
   useCreateTaskMutation,
+  useTaskExecutionPolicyDecisionMutation,
   useTasksQuery,
   useUpdateTaskMutation,
 } from '@/features/tasks/queries'
@@ -22,7 +23,7 @@ import { DirBrowser } from '@/components/shared/dir-browser'
 import { SheetFooter } from '@/components/shared/sheet-footer'
 import { inputClass } from '@/components/shared/form-styles'
 import { StructuredSessionLauncher } from '@/components/protocols/structured-session-launcher'
-import type { BoardTask, TaskComment, TaskLivenessState, TaskQualityGateConfig } from '@/types'
+import type { BoardTask, TaskComment, TaskExecutionPolicy, TaskLivenessState, TaskQualityGateConfig } from '@/types'
 import { dedup, errorMessage } from '@/lib/shared-utils'
 import { SectionLabel } from '@/components/shared/section-label'
 import { AgentAvatar } from '@/components/agents/agent-avatar'
@@ -63,6 +64,36 @@ function livenessLabel(task: BoardTask): string {
   return state.replace(/_/g, ' ')
 }
 
+function policyStageLabel(kind: 'review' | 'approval' | 'verification'): string {
+  if (kind === 'approval') return 'Approval'
+  if (kind === 'verification') return 'Verification'
+  return 'Review'
+}
+
+function buildExecutionPolicy(enabled: boolean, stages: {
+  review: boolean
+  approval: boolean
+  verification: boolean
+}): TaskExecutionPolicy | null {
+  if (!enabled) return null
+  const selected = (['review', 'approval', 'verification'] as const)
+    .filter((kind) => stages[kind])
+    .map((kind) => ({
+      id: kind,
+      title: policyStageLabel(kind),
+      kind,
+      requiredDecisions: 1,
+    }))
+  if (selected.length === 0) {
+    selected.push({ id: 'review', title: 'Review', kind: 'review', requiredDecisions: 1 })
+  }
+  return {
+    enabled: true,
+    mode: 'before_completion',
+    stages: selected,
+  }
+}
+
 export function TaskSheet() {
   const router = useRouter()
   const open = useAppStore((s) => s.taskSheetOpen)
@@ -80,6 +111,7 @@ export function TaskSheet() {
   const createTaskMutation = useCreateTaskMutation()
   const updateTaskMutation = useUpdateTaskMutation()
   const appendCommentMutation = useAppendTaskCommentMutation()
+  const policyDecisionMutation = useTaskExecutionPolicyDecisionMutation()
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -104,6 +136,12 @@ export function TaskSheet() {
   const [qualityGateRequireVerification, setQualityGateRequireVerification] = useState(false)
   const [qualityGateRequireArtifact, setQualityGateRequireArtifact] = useState(false)
   const [qualityGateRequireReport, setQualityGateRequireReport] = useState(false)
+  const [executionPolicyEnabled, setExecutionPolicyEnabled] = useState(false)
+  const [executionPolicyReview, setExecutionPolicyReview] = useState(true)
+  const [executionPolicyApproval, setExecutionPolicyApproval] = useState(false)
+  const [executionPolicyVerification, setExecutionPolicyVerification] = useState(false)
+  const [policyDecisionNote, setPolicyDecisionNote] = useState('')
+  const [policyDecisionError, setPolicyDecisionError] = useState<string | null>(null)
   const [provisionWorkspace, setProvisionWorkspace] = useState(false)
   const [workspacePreparing, setWorkspacePreparing] = useState(false)
   const [handoffCopying, setHandoffCopying] = useState(false)
@@ -165,6 +203,13 @@ export function TaskSheet() {
       setQualityGateRequireVerification(gate?.requireVerification ?? defaultGateRequireVerification)
       setQualityGateRequireArtifact(gate?.requireArtifact ?? defaultGateRequireArtifact)
       setQualityGateRequireReport(gate?.requireReport ?? defaultGateRequireReport)
+      const policyKinds = new Set((editing.executionPolicy?.stages || []).map((stage) => stage.kind))
+      setExecutionPolicyEnabled(Boolean(editing.executionPolicy?.enabled))
+      setExecutionPolicyReview(policyKinds.has('review') || policyKinds.size === 0)
+      setExecutionPolicyApproval(policyKinds.has('approval'))
+      setExecutionPolicyVerification(policyKinds.has('verification'))
+      setPolicyDecisionNote('')
+      setPolicyDecisionError(null)
       setProvisionWorkspace(false)
       setHandoffCopied(false)
       setHandoffError(null)
@@ -193,6 +238,12 @@ export function TaskSheet() {
     setQualityGateRequireVerification(defaultGateRequireVerification)
     setQualityGateRequireArtifact(defaultGateRequireArtifact)
     setQualityGateRequireReport(defaultGateRequireReport)
+    setExecutionPolicyEnabled(false)
+    setExecutionPolicyReview(true)
+    setExecutionPolicyApproval(false)
+    setExecutionPolicyVerification(false)
+    setPolicyDecisionNote('')
+    setPolicyDecisionError(null)
     setProvisionWorkspace(false)
     setHandoffCopied(false)
     setHandoffError(null)
@@ -221,6 +272,8 @@ export function TaskSheet() {
   const onClose = () => {
     formInitRef.current = null
     setDepError(null)
+    setPolicyDecisionNote('')
+    setPolicyDecisionError(null)
     setHandoffCopied(false)
     setHandoffError(null)
     setHandoffSavedPath(null)
@@ -239,6 +292,11 @@ export function TaskSheet() {
           requireReport: qualityGateRequireReport,
         }
       : null
+    const executionPolicy = buildExecutionPolicy(executionPolicyEnabled, {
+      review: executionPolicyReview,
+      approval: executionPolicyApproval,
+      verification: executionPolicyVerification,
+    })
 
     // projectId uses null (not undefined) so the API can distinguish "clear" from "not sent"
     // projectId uses null (not undefined) so the API can distinguish "clear" from "not sent"
@@ -249,6 +307,7 @@ export function TaskSheet() {
       customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
       priority: priority || undefined,
       qualityGate,
+      executionPolicy,
       provisionWorkspace: !editing && provisionWorkspace ? true : undefined,
     } as Partial<BoardTask> & { title: string; description: string; agentId: string }
     try {
@@ -374,6 +433,21 @@ export function TaskSheet() {
     setCommentText('')
   }
 
+  const handlePolicyDecision = async (action: 'approve' | 'request_changes' | 'reset') => {
+    if (!editing) return
+    setPolicyDecisionError(null)
+    try {
+      await policyDecisionMutation.mutateAsync({
+        id: editing.id,
+        action,
+        note: policyDecisionNote.trim() || null,
+      })
+      setPolicyDecisionNote('')
+    } catch (err: unknown) {
+      setPolicyDecisionError(errorMessage(err))
+    }
+  }
+
   const PRIORITY_STYLES: Record<string, string> = {
     low: 'bg-sky-500/10 border-sky-500/20 text-sky-400',
     medium: 'bg-amber-500/10 border-amber-500/20 text-amber-400',
@@ -391,6 +465,8 @@ export function TaskSheet() {
 
   const taskAgent = editing ? agents[editing.agentId] : null
   const taskProject = editing?.projectId ? projects[editing.projectId] : null
+  const currentPolicyStage = editing?.executionPolicy?.stages.find((stage) => stage.id === editing.executionPolicyState?.currentStageId) || null
+  const executionPolicyStatus = editing?.executionPolicyState?.status || (editing?.executionPolicy?.enabled ? 'waiting' : 'disabled')
   const previewLinks = editing
     ? (editing.previewLinks && editing.previewLinks.length > 0
       ? editing.previewLinks
@@ -689,6 +765,82 @@ export function TaskSheet() {
               <p>Verification required: {(editing.qualityGate.requireVerification ?? false) ? 'Yes' : 'No'}</p>
               <p>Artifact required: {(editing.qualityGate.requireArtifact ?? false) ? 'Yes' : 'No'}</p>
               <p>Task report required: {(editing.qualityGate.requireReport ?? false) ? 'Yes' : 'No'}</p>
+            </div>
+          </div>
+        )}
+
+        {editing.executionPolicy?.enabled && (
+          <div className="mb-8">
+            <SectionLabel>Execution Policy</SectionLabel>
+            <div className="rounded-[14px] border border-white/[0.06] bg-surface p-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <InfoChip tone={executionPolicyStatus === 'completed' ? 'success' : executionPolicyStatus === 'changes_requested' ? 'danger' : 'warning'}>
+                  {executionPolicyStatus.replace(/_/g, ' ')}
+                </InfoChip>
+                {currentPolicyStage && (
+                  <InfoChip tone="neutral">
+                    {currentPolicyStage.title}
+                  </InfoChip>
+                )}
+              </div>
+              <div className="space-y-2">
+                {editing.executionPolicy.stages.map((stage) => {
+                  const stageState = editing.executionPolicyState?.stages.find((item) => item.id === stage.id)
+                  return (
+                    <div key={stage.id} className="rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[12px] font-700 text-text">{stage.title}</div>
+                        <span className="text-[11px] text-text-3">{(stageState?.status || 'pending').replace(/_/g, ' ')}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-text-3/70">{stage.kind}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              {executionPolicyStatus !== 'completed' && (
+                <div className="space-y-2">
+                  <textarea
+                    value={policyDecisionNote}
+                    onChange={(e) => setPolicyDecisionNote(e.target.value)}
+                    placeholder="Decision note..."
+                    rows={2}
+                    className={`${inputClass} resize-y min-h-[64px] text-[12px]`}
+                    style={{ fontFamily: 'inherit' }}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => void handlePolicyDecision('approve')}
+                      disabled={policyDecisionMutation.isPending}
+                      className="inline-flex items-center gap-2 rounded-[10px] border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[12px] font-700 text-emerald-300 hover:bg-emerald-500/15 disabled:opacity-50"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      <CheckCircle2 size={13} />
+                      Approve Stage
+                    </button>
+                    <button
+                      onClick={() => void handlePolicyDecision('request_changes')}
+                      disabled={policyDecisionMutation.isPending}
+                      className="inline-flex items-center gap-2 rounded-[10px] border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] font-700 text-red-300 hover:bg-red-500/15 disabled:opacity-50"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      <XCircle size={13} />
+                      Request Changes
+                    </button>
+                    <button
+                      onClick={() => void handlePolicyDecision('reset')}
+                      disabled={policyDecisionMutation.isPending}
+                      className="inline-flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[12px] font-700 text-text-2 hover:bg-white/[0.08] disabled:opacity-50"
+                      style={{ fontFamily: 'inherit' }}
+                    >
+                      <RotateCcw size={13} />
+                      Reset Stage
+                    </button>
+                  </div>
+                  {policyDecisionError && (
+                    <p className="text-[12px] font-600 text-red-400">{policyDecisionError}</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1327,6 +1479,57 @@ export function TaskSheet() {
                 />
                 Require generated task report
               </label>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <SectionLabel>Execution Policy</SectionLabel>
+        <div className="p-4 rounded-[14px] border border-white/[0.06] bg-surface">
+          <button
+            onClick={() => setExecutionPolicyEnabled((prev) => !prev)}
+            className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 cursor-pointer ${executionPolicyEnabled ? 'bg-accent' : 'bg-white/[0.12]'}`}
+          >
+            <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200 ${executionPolicyEnabled ? 'translate-x-[18px]' : ''}`} />
+          </button>
+          <span className="ml-2 text-[12px] text-text-2">{executionPolicyEnabled ? 'Enabled' : 'Disabled'}</span>
+
+          {executionPolicyEnabled && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+              <label className="flex items-center gap-2 text-[12px] text-text-2">
+                <input
+                  type="checkbox"
+                  checked={executionPolicyReview}
+                  onChange={(e) => setExecutionPolicyReview(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/20 accent-accent"
+                />
+                Review
+              </label>
+              <label className="flex items-center gap-2 text-[12px] text-text-2">
+                <input
+                  type="checkbox"
+                  checked={executionPolicyApproval}
+                  onChange={(e) => setExecutionPolicyApproval(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/20 accent-accent"
+                />
+                Approval
+              </label>
+              <label className="flex items-center gap-2 text-[12px] text-text-2">
+                <input
+                  type="checkbox"
+                  checked={executionPolicyVerification}
+                  onChange={(e) => setExecutionPolicyVerification(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/20 accent-accent"
+                />
+                Verification
+              </label>
+              {editing?.executionPolicyState && (
+                <div className="md:col-span-3 rounded-[10px] border border-white/[0.05] bg-white/[0.02] px-3 py-2 text-[12px] text-text-3">
+                  Current state: {executionPolicyStatus.replace(/_/g, ' ')}
+                  {currentPolicyStage ? ` at ${currentPolicyStage.title}` : ''}
+                </div>
+              )}
             </div>
           )}
         </div>

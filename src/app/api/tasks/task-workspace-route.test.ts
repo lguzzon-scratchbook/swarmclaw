@@ -17,6 +17,8 @@ let tempDir = ''
 let putTask: typeof import('./[id]/route')['PUT']
 let getTaskHandoff: typeof import('./[id]/handoff/route')['GET']
 let postTaskHandoff: typeof import('./[id]/handoff/route')['POST']
+let getTaskExecutionPolicy: typeof import('./[id]/execution-policy/route')['GET']
+let postTaskExecutionPolicy: typeof import('./[id]/execution-policy/route')['POST']
 let getTaskHandoffs: typeof import('./handoffs/route')['GET']
 let getTasks: typeof import('./route')['GET']
 let storage: typeof import('@/lib/server/storage')
@@ -52,6 +54,9 @@ before(async () => {
   const handoffRoute = await import('./[id]/handoff/route')
   getTaskHandoff = handoffRoute.GET
   postTaskHandoff = handoffRoute.POST
+  const policyRoute = await import('./[id]/execution-policy/route')
+  getTaskExecutionPolicy = policyRoute.GET
+  postTaskExecutionPolicy = policyRoute.POST
   getTaskHandoffs = (await import('./handoffs/route')).GET
   getTasks = (await import('./route')).GET
 })
@@ -164,6 +169,90 @@ test('GET /api/tasks/:id/handoff returns readiness and markdown packets', async 
   const markdown = await markdownResponse.text()
   assert.match(markdown, /# Task Handoff: Handoff Route Task/)
   assert.match(markdown, /Readiness: blocked/)
+})
+
+test('PUT /api/tasks/:id blocks completion until execution policy stages are approved', async () => {
+  seedTask('task-policy-complete', {
+    title: 'Policy Completion Task',
+    result: 'Implemented the requested feature, updated src/app/example.ts, and verified with npm run test.',
+    executionPolicy: {
+      enabled: true,
+      mode: 'before_completion',
+      stages: [{ id: 'review', title: 'Review', kind: 'review', requiredDecisions: 1 }],
+    },
+  })
+
+  const blocked = await putTask(new Request('http://local/api/tasks/task-policy-complete', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'completed' }),
+  }), routeParams('task-policy-complete'))
+
+  assert.equal(blocked.status, 409)
+  assert.equal(storage.loadTasks()['task-policy-complete']?.status, 'backlog')
+
+  const policyResponse = await postTaskExecutionPolicy(new Request('http://local/api/tasks/task-policy-complete/execution-policy', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'approve', actor: 'QA' }),
+  }), routeParams('task-policy-complete'))
+  assert.equal(policyResponse.status, 200)
+  const policyBody = await policyResponse.json()
+  assert.equal(policyBody.state.status, 'completed')
+
+  const completed = await putTask(new Request('http://local/api/tasks/task-policy-complete', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'completed' }),
+  }), routeParams('task-policy-complete'))
+
+  assert.equal(completed.status, 200)
+  const body = await completed.json() as BoardTask
+  assert.equal(body.status, 'completed')
+})
+
+test('PUT /api/tasks/:id allows edits to already completed tasks without re-requesting completion', async () => {
+  seedTask('task-policy-completed-edit', {
+    title: 'Completed Policy Edit Task',
+    status: 'completed',
+    result: 'Completed with tests passed and build passed.',
+    executionPolicy: {
+      enabled: true,
+      mode: 'before_completion',
+      stages: [{ id: 'review', title: 'Review', kind: 'review', requiredDecisions: 1 }],
+    },
+  })
+
+  const response = await putTask(new Request('http://local/api/tasks/task-policy-completed-edit', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Completed Policy Edit Task Updated' }),
+  }), routeParams('task-policy-completed-edit'))
+
+  assert.equal(response.status, 200)
+  const body = await response.json() as BoardTask
+  assert.equal(body.status, 'completed')
+  assert.equal(body.title, 'Completed Policy Edit Task Updated')
+})
+
+test('GET /api/tasks/:id/execution-policy returns policy summary', async () => {
+  seedTask('task-policy-summary', {
+    title: 'Policy Summary Task',
+    executionPolicy: {
+      enabled: true,
+      mode: 'before_completion',
+      stages: [{ id: 'review', title: 'Review', kind: 'review' }],
+    },
+  })
+
+  const response = await getTaskExecutionPolicy(
+    new Request('http://local/api/tasks/task-policy-summary/execution-policy'),
+    routeParams('task-policy-summary'),
+  )
+  assert.equal(response.status, 200)
+  const body = await response.json()
+  assert.equal(body.summary.enabled, true)
+  assert.equal(body.summary.status, 'waiting')
 })
 
 test('POST /api/tasks/:id/handoff saves markdown and JSON snapshots into the workspace', async () => {

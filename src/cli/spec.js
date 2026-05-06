@@ -532,6 +532,8 @@ const COMMAND_GROUPS = {
       handoff: { description: 'Get task handoff packet', method: 'GET', path: '/tasks/:id/handoff', params: ['id'] },
       'handoff-save': { description: 'Save task handoff packet into the task workspace', method: 'POST', path: '/tasks/:id/handoff', params: ['id'] },
       handoffs: { description: 'List task handoff readiness packets', method: 'GET', path: '/tasks/handoffs' },
+      'execution-policy': { description: 'Get task execution policy state', method: 'GET', path: '/tasks/:id/execution-policy', params: ['id'] },
+      'execution-policy-decision': { description: 'Approve, request changes, or reset a task policy stage', method: 'POST', path: '/tasks/:id/execution-policy', params: ['id'] },
       create: { description: 'Create task', method: 'POST', path: '/tasks' },
       bulk: { description: 'Bulk update tasks (status/agent/project)', method: 'POST', path: '/tasks/bulk' },
       update: { description: 'Update task', method: 'PUT', path: '/tasks/:id', params: ['id'] },

@@ -1,5 +1,13 @@
 import { api } from './app/api-client'
-import type { BoardTask, TaskComment, TaskHandoffPacket, TaskPreviewLink, TaskRuntimeService } from '../types'
+import type {
+  BoardTask,
+  TaskComment,
+  TaskExecutionPolicy,
+  TaskExecutionPolicyState,
+  TaskHandoffPacket,
+  TaskPreviewLink,
+  TaskRuntimeService,
+} from '../types'
 
 export const fetchTasks = (includeArchived = false) =>
   api<Record<string, BoardTask>>('GET', `/tasks${includeArchived ? '?includeArchived=true' : ''}`)
@@ -37,6 +45,19 @@ export interface TaskHandoffSnapshotResult {
   }
 }
 
+export interface TaskExecutionPolicyResult {
+  task: BoardTask
+  policy: TaskExecutionPolicy | null
+  state: TaskExecutionPolicyState | null
+  summary: {
+    enabled: boolean
+    status: string
+    currentStage: TaskExecutionPolicy['stages'][number] | null
+    remainingStages: number
+    blockReason: string | null
+  }
+}
+
 export type TaskWriteInput = Partial<BoardTask> & {
   title?: string
   description?: string
@@ -67,6 +88,12 @@ export const saveTaskHandoffSnapshot = (id: string, options: { prepareWorkspace?
   api<TaskHandoffSnapshotResult>('POST', `/tasks/${encodeURIComponent(id)}/handoff`, {
     prepareWorkspace: options.prepareWorkspace ?? true,
   }, { timeoutMs: 30_000 })
+
+export const decideTaskExecutionPolicy = (
+  id: string,
+  data: { action?: 'approve' | 'request_changes' | 'reset'; stageId?: string | null; actor?: string; note?: string | null },
+) =>
+  api<TaskExecutionPolicyResult>('POST', `/tasks/${encodeURIComponent(id)}/execution-policy`, data)
 
 export const deleteTask = (id: string) =>
   api<BoardTask>('DELETE', `/tasks/${id}`)

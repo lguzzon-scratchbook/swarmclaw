@@ -1,6 +1,11 @@
 import { buildRunBrief } from '@/lib/server/runs/run-brief'
 import { getUnifiedRunById, listUnifiedRunEvents, listUnifiedRuns } from '@/lib/server/runs/unified-run-queries'
 import { computeTaskLiveness } from '@/lib/server/tasks/task-execution-workspace'
+import {
+  describeTaskExecutionPolicy,
+  normalizeTaskExecutionPolicy,
+  syncTaskExecutionPolicyState,
+} from '@/lib/server/tasks/task-execution-policy'
 import type {
   BoardTask,
   RunBrief,
@@ -137,6 +142,35 @@ function qualityChecks(task: BoardTask, runBrief: RunBrief | null): TaskHandoffC
   return checks.length > 0 ? checks : [check('quality-gate', 'Quality gate', 'ok', 'Enabled gate has no active requirements.')]
 }
 
+function executionPolicyChecks(task: BoardTask): TaskHandoffCheck[] {
+  const policy = normalizeTaskExecutionPolicy(task.executionPolicy)
+  if (!policy) return [check('execution-policy', 'Execution policy', 'ok', 'No task execution policy is enabled.')]
+  const state = syncTaskExecutionPolicyState(policy, task.executionPolicyState)
+  const summary = describeTaskExecutionPolicy({ executionPolicy: policy, executionPolicyState: state })
+  if (policy.mode === 'advisory') {
+    return [check('execution-policy', 'Execution policy', 'ok', 'Policy is advisory.')]
+  }
+  if (state?.status === 'completed') {
+    return [check('execution-policy', 'Execution policy', 'ok', 'All required policy stages are complete.')]
+  }
+  if (state?.status === 'changes_requested') {
+    return [check(
+      'execution-policy',
+      'Execution policy',
+      'blocked',
+      summary.blockReason || 'Changes were requested on a required policy stage.',
+      state.currentStageId ? [state.currentStageId] : undefined,
+    )]
+  }
+  return [check(
+    'execution-policy',
+    'Execution policy',
+    'warning',
+    summary.blockReason || 'A required policy stage is still waiting.',
+    state?.currentStageId ? [state.currentStageId] : undefined,
+  )]
+}
+
 function readinessStatus(checks: TaskHandoffCheck[]): TaskHandoffReadinessStatus {
   if (checks.some((item) => item.status === 'blocked')) return 'blocked'
   if (checks.some((item) => item.status === 'warning')) return 'needs_attention'
@@ -151,6 +185,7 @@ function recommendedActions(checks: TaskHandoffCheck[]): string[] {
     else if (item.id === 'workspace') actions.push('Prepare or refresh the task workspace before handing it to another operator.')
     else if (item.id === 'liveness') actions.push('Inspect the current run state and clear stale or failed execution before resuming.')
     else if (item.id.startsWith('quality-')) actions.push(item.detail || 'Resolve the task quality gate before handoff.')
+    else if (item.id === 'execution-policy') actions.push(item.detail || 'Complete the required execution policy stage before closing the task.')
     else if (item.detail) actions.push(item.detail)
   }
   return Array.from(new Set(actions)).slice(0, 8)
@@ -170,6 +205,9 @@ export function buildTaskHandoffPacket(
     .map((ref) => ref.id)
   const runBrief = options.runBrief === undefined ? resolveLatestRunBrief(task) : options.runBrief
   const gateChecks = qualityChecks(task, runBrief)
+  const policy = normalizeTaskExecutionPolicy(task.executionPolicy, now)
+  const policyState = syncTaskExecutionPolicyState(policy, task.executionPolicyState, now)
+  const policyChecks = executionPolicyChecks({ ...task, executionPolicy: policy, executionPolicyState: policyState })
   const executionWorkspace = task.executionWorkspace || null
   const previewLinks = task.previewLinks && task.previewLinks.length > 0
     ? task.previewLinks
@@ -211,6 +249,7 @@ export function buildTaskHandoffPacket(
       liveness.reason,
     ),
     ...gateChecks,
+    ...policyChecks,
   ]
 
   const status = readinessStatus(checks)
@@ -249,6 +288,12 @@ export function buildTaskHandoffPacket(
       enabled: Boolean(task.qualityGate?.enabled),
       config: task.qualityGate || null,
       checks: gateChecks,
+    },
+    executionPolicy: {
+      enabled: Boolean(policy?.enabled),
+      config: policy,
+      state: policyState,
+      checks: policyChecks,
     },
     outputs: {
       result: task.result || null,
@@ -341,6 +386,17 @@ export function formatTaskHandoffMarkdown(packet: TaskHandoffPacket): string {
     const detail = item.detail ? `, ${item.detail}` : ''
     return `- ${item.label}: ${item.status}${detail}`
   }))
+
+  appendSection(lines, 'Execution Policy', [
+    packet.executionPolicy.enabled
+      ? `- Status: ${packet.executionPolicy.state?.status || 'waiting'}`
+      : '- Status: not enabled',
+    packet.executionPolicy.state?.currentStageId ? `- Current stage: ${packet.executionPolicy.state.currentStageId}` : '',
+    ...packet.executionPolicy.checks.map((item) => {
+      const detail = item.detail ? `, ${item.detail}` : ''
+      return `- ${item.label}: ${item.status}${detail}`
+    }),
+  ].filter(Boolean))
 
   appendSection(lines, 'Evidence', [
     packet.outputs.result ? `- Result: ${compactText(packet.outputs.result, 500)}` : '',

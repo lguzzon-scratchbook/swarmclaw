@@ -70,6 +70,19 @@ const AgentRoutingTargetSchema = z.object({
   priority: z.number().int().optional(),
 })
 
+const TaskExecutionPolicySchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: z.enum(['before_completion', 'advisory']).optional(),
+  stages: z.array(z.object({
+    id: z.string().optional(),
+    title: z.string().optional(),
+    kind: z.enum(['review', 'approval', 'verification']).optional(),
+    description: z.string().nullable().optional(),
+    actorHint: z.string().nullable().optional(),
+    requiredDecisions: z.number().optional(),
+  })).optional().default([]),
+}).nullable().optional()
+
 export const AgentCreateSchema = z.object({
   name: z.string().min(1, 'Agent name is required'),
   provider: z.string().min(1, 'Provider is required'),
@@ -227,6 +240,7 @@ export const TaskCreateSchema = z.object({
     requireArtifact: z.boolean().optional(),
     requireReport: z.boolean().optional(),
   }).nullable().optional(),
+  executionPolicy: TaskExecutionPolicySchema,
 })
 
 /**

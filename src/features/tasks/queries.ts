@@ -3,11 +3,13 @@ import { api } from '@/lib/app/api-client'
 import {
   bulkUpdateTasks,
   createTask,
+  decideTaskExecutionPolicy,
   fetchTasks,
   importGitHubIssues,
   updateTask,
   type GitHubIssueImportRequest,
   type GitHubIssueImportResult,
+  type TaskExecutionPolicyResult,
   type TaskWriteInput,
 } from '@/lib/tasks'
 import type { BoardTask, BoardTaskStatus, TaskComment } from '@/types'
@@ -184,6 +186,22 @@ export function useAppendTaskCommentMutation() {
     mutationFn: ({ id, comment }: { id: string; comment: TaskComment }) =>
       updateTask(id, { appendComment: comment } as Partial<BoardTask> & { appendComment: TaskComment }),
     onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: taskQueryKeys.all })
+    },
+  })
+}
+
+export function useTaskExecutionPolicyDecisionMutation() {
+  const queryClient = useQueryClient()
+  return useMutation<TaskExecutionPolicyResult, Error, {
+    id: string
+    action?: 'approve' | 'request_changes' | 'reset'
+    stageId?: string | null
+    actor?: string
+    note?: string | null
+  }>({
+    mutationFn: ({ id, ...data }) => decideTaskExecutionPolicy(id, data),
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: taskQueryKeys.all })
     },
   })

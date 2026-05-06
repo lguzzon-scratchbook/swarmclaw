@@ -7,6 +7,7 @@ import {
   validateTaskCompletion,
   type TaskCompletionValidation,
 } from '@/lib/server/tasks/task-validation'
+import { syncTaskExecutionPolicyState } from '@/lib/server/tasks/task-execution-policy'
 
 export interface BuildBoardTaskInput {
   id?: string
@@ -70,6 +71,7 @@ export function resetTaskForRerun(task: BoardTask, options: ResetTaskForRerunOpt
   task.retryScheduledAt = null
   task.deadLetteredAt = null
   task.validation = null
+  task.executionPolicyState = syncTaskExecutionPolicyState(task.executionPolicy || null, null, options.now)
   if (options.runNumber !== undefined) stats.runNumber = options.runNumber
   return task
 }

@@ -8,6 +8,10 @@ import {
   markValidatedTaskCompleted,
   refreshTaskCompletionValidation,
 } from '@/lib/server/tasks/task-lifecycle'
+import {
+  normalizeTaskExecutionPolicy,
+  syncTaskExecutionPolicyState,
+} from '@/lib/server/tasks/task-execution-policy'
 import { normalizeTaskQualityGate } from '@/lib/server/tasks/task-quality-gate'
 
 const TASK_STATUS_VALUES = new Set([
@@ -200,6 +204,14 @@ export function prepareTaskCreation(options: PrepareTaskCreationOptions): Prepar
       ? normalizeTaskQualityGate(options.input.qualityGate, options.settings || null)
       : null)
     : seed.qualityGate
+  const executionPolicy = hasOwn(options.input, 'executionPolicy')
+    ? normalizeTaskExecutionPolicy(options.input.executionPolicy, options.now)
+    : (seed.executionPolicy
+      ? normalizeTaskExecutionPolicy(seed.executionPolicy, options.now)
+      : null)
+  const executionPolicyState = executionPolicy
+    ? syncTaskExecutionPolicyState(executionPolicy, seed.executionPolicyState as never, options.now)
+    : null
   const cwd = Object.prototype.hasOwnProperty.call(options.input, 'cwd')
     ? (typeof options.input.cwd === 'string' ? options.input.cwd : null)
     : (typeof options.defaultCwd === 'string' ? options.defaultCwd : seed.cwd ?? null)
@@ -215,6 +227,8 @@ export function prepareTaskCreation(options: PrepareTaskCreationOptions): Prepar
       ...seed,
       cwd,
       qualityGate,
+      executionPolicy,
+      executionPolicyState,
     },
   })
   if (!task.workflowStateId && task.agentId) {
@@ -264,6 +278,22 @@ export function applyTaskPatch(options: ApplyTaskPatchOptions): BoardTask {
     nextPatch.qualityGate = nextPatch.qualityGate
       ? normalizeTaskQualityGate(nextPatch.qualityGate, options.settings || null)
       : null
+  }
+  if (hasOwn(nextPatch, 'executionPolicy')) {
+    const normalizedPolicy = nextPatch.executionPolicy
+      ? normalizeTaskExecutionPolicy(nextPatch.executionPolicy, options.now)
+      : null
+    nextPatch.executionPolicy = normalizedPolicy
+    nextPatch.executionPolicyState = normalizedPolicy
+      ? syncTaskExecutionPolicyState(normalizedPolicy, options.task.executionPolicyState, options.now)
+      : null
+  } else if (options.task.executionPolicy) {
+    options.task.executionPolicy = normalizeTaskExecutionPolicy(options.task.executionPolicy, options.now)
+    options.task.executionPolicyState = syncTaskExecutionPolicyState(
+      options.task.executionPolicy,
+      options.task.executionPolicyState,
+      options.now,
+    )
   }
 
   Object.assign(options.task, nextPatch, { updatedAt: options.now })

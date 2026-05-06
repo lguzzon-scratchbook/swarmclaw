@@ -12,7 +12,7 @@ const {
   getApiCoveragePairs,
   parseArgv,
   runCli,
-} = require('./index')
+} = require('./index.js')
 
 function collectApiRoutePairs() {
   const root = path.join(process.cwd(), 'src', 'app', 'api')
@@ -192,6 +192,36 @@ test('tasks handoff command can request markdown packets', async () => {
   assert.match(calls[0].url, /\/api\/tasks\/task-1\/handoff\?format=markdown$/)
   assert.equal(calls[0].init.method, 'GET')
   assert.equal(stdout.toString(), '# Task Handoff\n')
+  assert.equal(stderr.toString(), '')
+})
+
+test('tasks execution-policy-decision posts policy decisions', async () => {
+  const stdout = makeWritable()
+  const stderr = makeWritable()
+  const calls = []
+
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return jsonResponse({ state: { status: 'completed' } })
+  }
+
+  const exitCode = await runCli(
+    ['tasks', 'execution-policy-decision', 'task-1', '--data', '{"action":"approve","actor":"QA"}', '--json'],
+    {
+      fetchImpl,
+      stdout,
+      stderr,
+      env: {},
+      cwd: process.cwd(),
+    }
+  )
+
+  assert.equal(exitCode, 0)
+  assert.equal(calls.length, 1)
+  assert.match(calls[0].url, /\/api\/tasks\/task-1\/execution-policy$/)
+  assert.equal(calls[0].init.method, 'POST')
+  assert.deepEqual(JSON.parse(calls[0].init.body), { action: 'approve', actor: 'QA' })
+  assert.match(stdout.toString(), /"completed"/)
   assert.equal(stderr.toString(), '')
 })
 
