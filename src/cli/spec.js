@@ -458,6 +458,7 @@ const COMMAND_GROUPS = {
       'clear-undo': { description: 'Restore a cleared chat via its undoToken', method: 'POST', path: '/chats/:id/clear/undo', params: ['id'] },
       compact: { description: 'Summarize and compact chat history', method: 'POST', path: '/chats/:id/compact', params: ['id'] },
       'context-status': { description: 'Report token usage and context-window status', method: 'GET', path: '/chats/:id/context-status', params: ['id'] },
+      'context-pack': { description: 'Get a copyable session context pack for handoff', method: 'GET', path: '/chats/:id/context-pack', params: ['id'] },
       mailbox: { description: 'List mailbox envelopes for a chat', method: 'GET', path: '/chats/:id/mailbox', params: ['id'] },
       'mailbox-action': { description: 'Send/ack/clear mailbox envelopes', method: 'POST', path: '/chats/:id/mailbox', params: ['id'] },
       queue: { description: 'List queued follow-up turns for a chat', method: 'GET', path: '/chats/:id/queue', params: ['id'] },

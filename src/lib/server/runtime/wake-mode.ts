@@ -3,9 +3,6 @@
  *
  * Replaces the implicit `source: 'heartbeat' | 'heartbeat-wake'` convention
  * with a formal enum that determines routing, priority, and isolation behavior.
- *
- * Inspired by OpenClaw's separation of "run now" vs "queue next heartbeat" vs
- * scheduled execution with proper isolation.
  */
 
 // ── WakeMode enum ───────────────────────────────────────────────────────

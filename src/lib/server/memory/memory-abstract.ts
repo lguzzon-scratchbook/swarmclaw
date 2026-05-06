@@ -1,6 +1,5 @@
 /**
  * Generates concise abstracts (~100 tokens) for memory entries.
- * Inspired by OpenViking's L0/L1/L2 tiered context representations.
  *
  * Used in proactive recall to inject summaries instead of truncated raw content,
  * reducing token waste and preserving semantic meaning.

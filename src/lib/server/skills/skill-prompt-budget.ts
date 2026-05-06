@@ -84,8 +84,8 @@ export function budgetSkillsForPrompt(
 
 /**
  * Prescriptive skill adherence header.
- * This tells the model exactly when and how to use skills — the key difference
- * vs OpenClaw's superior skill following (1-2 tool calls vs 3-5).
+ * This tells the model exactly when and how to use skills so it can keep
+ * skill-backed turns focused and economical.
  */
 const SKILL_ADHERENCE_HEADER = `## Skills
 

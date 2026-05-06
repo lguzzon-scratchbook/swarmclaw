@@ -1,9 +1,6 @@
 /**
  * Workspace context injection — injects workspace files into the agent's system prompt.
  *
- * Inspired by OpenClaw's pattern of injecting HEARTBEAT.md, IDENTITY.md, AGENTS.md,
- * SOUL.md, TOOLS.md, USER.md, and BOOTSTRAP.md into every agent turn.
- *
  * This gives agents self-awareness, goals, and context about their operating environment
  * without requiring the user to manually configure everything.
  */

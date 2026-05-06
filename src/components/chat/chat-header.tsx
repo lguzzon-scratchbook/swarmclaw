@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
-import { Plus } from 'lucide-react'
+import { ClipboardList, Plus } from 'lucide-react'
 import type { Session } from '@/types'
 import { useAppStore } from '@/stores/use-app-store'
 import { useChatStore } from '@/stores/use-chat-store'
@@ -108,6 +108,8 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
   const connectorMeta = connector ? resolveConnectorPlatformMeta(connector.platform) : null
   const connectorPresence = connector?.presence
   const [copied, setCopied] = useState(false)
+  const [contextPackCopied, setContextPackCopied] = useState(false)
+  const [contextPackLoading, setContextPackLoading] = useState(false)
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false)
   const sourceDropdownRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState(false)
@@ -220,6 +222,22 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     })
   }
 
+  const handleCopyContextPack = async () => {
+    if (contextPackLoading) return
+    setContextPackLoading(true)
+    try {
+      const markdown = await api<string>('GET', `/chats/${session.id}/context-pack?format=markdown`)
+      const copiedPack = await copyTextToClipboard(markdown)
+      if (!copiedPack) return
+      setContextPackCopied(true)
+      setTimeout(() => setContextPackCopied(false), 2000)
+    } catch {
+      // Best-effort clipboard helper; the route remains available from the CLI.
+    } finally {
+      setContextPackLoading(false)
+    }
+  }
+
   const handleDismissResumeHandle = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
@@ -302,10 +320,11 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
     }
   }, [session.name, loadConnectors])
 
-  // Context bar shows for memories, source filter, task links, resume handles, browser
+  // Context bar shows for handoff packs, memories, source filter, task links, resume handles, browser
+  const hasContextPack = messageCount > 0
   const hasMemoryLink = !!(agent && getEnabledToolIds(session).includes('memory'))
   const hasSourceFilter = !!hasMultipleSources
-  const hasContextBar = !!(hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || browserActive)
+  const hasContextBar = !!(hasContextPack || hasMemoryLink || hasSourceFilter || linkedTask || resumeHandle || browserActive)
 
   return (
     <>
@@ -523,6 +542,20 @@ export function ChatHeader({ session, streaming, onStop, onMenuToggle, onBack, m
       {hasContextBar && (
         <div className="border-t border-white/[0.05] bg-black/[0.08] px-4 py-2">
         <div className="flex items-center gap-1.5 flex-wrap">
+          {hasContextPack && (
+            <Tip label="Copy session context pack">
+            <button
+              type="button"
+              onClick={handleCopyContextPack}
+              disabled={contextPackLoading}
+              aria-label="Copy session context pack"
+              className="flex min-w-[122px] items-center justify-center gap-1 px-2.5 py-1 rounded-[8px] bg-white/[0.03] hover:bg-white/[0.06] disabled:opacity-70 disabled:cursor-wait transition-colors cursor-pointer text-[10px] font-600 text-text-3/60 hover:text-text-2 shrink-0"
+            >
+              <ClipboardList className="h-3 w-3 shrink-0" aria-hidden="true" strokeWidth={2.2} />
+              <span>{contextPackLoading ? 'Packing' : contextPackCopied ? 'Copied' : 'Context pack'}</span>
+            </button>
+            </Tip>
+          )}
           {hasMemoryLink && (
             <Tip label="View agent memories">
             <button

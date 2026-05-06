@@ -24,6 +24,14 @@ interface AuthSession {
   cookieHeader: string
 }
 
+function authHeaders(auth: AuthSession, contentType = true): Record<string, string> {
+  return {
+    ...(contentType ? { 'Content-Type': 'application/json' } : {}),
+    'X-Access-Key': auth.accessKey,
+    ...(auth.cookieHeader ? { Cookie: auth.cookieHeader } : {}),
+  }
+}
+
 function printHelp(): void {
   console.log(`SwarmClaw browser smoke runner
 
@@ -363,11 +371,7 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
 
     const taskRes = await fetchWithTimeout(new URL('/api/tasks', baseUrl).toString(), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Access-Key': auth.accessKey,
-        ...(auth.cookieHeader ? { Cookie: auth.cookieHeader } : {}),
-      },
+      headers: authHeaders(auth),
       body: JSON.stringify({
         title: 'E2E task workspace',
         description: 'Verify task-scoped workspace and preview metadata render in the task board.',
@@ -378,6 +382,49 @@ async function runBrowserSmoke(baseUrl: string): Promise<void> {
     }, 10_000)
     if (!taskRes.ok) {
       throw new Error(`Could not create task workspace smoke record: ${taskRes.status} ${await taskRes.text().catch(() => '')}`)
+    }
+
+    const chatRes = await fetchWithTimeout(new URL('/api/chats', baseUrl).toString(), {
+      method: 'POST',
+      headers: authHeaders(auth),
+      body: JSON.stringify({
+        name: 'E2E context pack',
+        provider: 'claude-cli',
+        model: 'sonnet',
+        messages: [
+          { role: 'user', text: 'Prepare a handoff pack.', time: Date.now(), attachedFiles: ['/tmp/e2e-context.md'] },
+          { role: 'assistant', text: 'The handoff pack is ready.', time: Date.now() + 1 },
+        ],
+      }),
+    }, 10_000)
+    if (!chatRes.ok) {
+      throw new Error(`Could not create context pack smoke chat: ${chatRes.status} ${await chatRes.text().catch(() => '')}`)
+    }
+    const chatPayload = await chatRes.json().catch(() => null) as { id?: unknown } | null
+    if (typeof chatPayload?.id !== 'string' || !chatPayload.id) {
+      throw new Error(`Context pack smoke chat returned an unexpected payload: ${JSON.stringify(chatPayload)}`)
+    }
+
+    const contextPackRes = await fetchWithTimeout(new URL(`/api/chats/${chatPayload.id}/context-pack`, baseUrl).toString(), {
+      headers: authHeaders(auth),
+    }, 10_000)
+    if (!contextPackRes.ok) {
+      throw new Error(`Context pack JSON route returned ${contextPackRes.status}: ${await contextPackRes.text().catch(() => '')}`)
+    }
+    const contextPack = await contextPackRes.json().catch(() => null) as { schemaVersion?: unknown; session?: { id?: unknown }; recentMessages?: unknown[] } | null
+    if (contextPack?.schemaVersion !== 1 || contextPack.session?.id !== chatPayload.id || !Array.isArray(contextPack.recentMessages)) {
+      throw new Error(`Context pack JSON returned an unexpected payload: ${JSON.stringify(contextPack)}`)
+    }
+
+    const contextPackMarkdownRes = await fetchWithTimeout(new URL(`/api/chats/${chatPayload.id}/context-pack?format=markdown`, baseUrl).toString(), {
+      headers: authHeaders(auth),
+    }, 10_000)
+    if (!contextPackMarkdownRes.ok) {
+      throw new Error(`Context pack markdown route returned ${contextPackMarkdownRes.status}: ${await contextPackMarkdownRes.text().catch(() => '')}`)
+    }
+    const contextPackMarkdown = await contextPackMarkdownRes.text()
+    if (!contextPackMarkdown.includes('# Session Context Pack: E2E context pack') || !contextPackMarkdown.includes('Recent Turns')) {
+      throw new Error(`Context pack markdown returned an unexpected body: ${contextPackMarkdown.slice(0, 240)}`)
     }
 
     page = await newSmokePage()

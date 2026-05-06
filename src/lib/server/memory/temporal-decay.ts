@@ -3,7 +3,6 @@
  *
  * Applies exponential decay to memory search scores based on entry age.
  * Older memories score lower, surfacing recent relevant context preferentially.
- * Inspired by OpenClaw's temporal-decay.ts.
  */
 
 export interface TemporalDecayConfig {

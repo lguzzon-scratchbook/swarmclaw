@@ -399,6 +399,15 @@ Operational docs: https://swarmclaw.ai/docs/observability
 
 ## Releases
 
+### v1.9.14 Highlights
+
+Session context-pack release: SwarmClaw now turns a live chat into a concise handoff packet with session metadata, recent visible turns, linked tasks, attachments, resume handles, and next actions.
+
+- **Context-pack API.** `GET /api/chats/:id/context-pack` returns structured handoff JSON, and `?format=markdown` returns copyable markdown.
+- **Chat header copy action.** Active chats with messages expose a context-pack button for quick handoff to another operator or backend.
+- **CLI access.** `swarmclaw chats context-pack <chatId> --query format=markdown` exposes the same packet for scripts and release automation.
+- **Smoke coverage.** Runtime tests and the browser smoke gate now verify the context-pack route and markdown response.
+
 ### v1.9.13 Highlights
 
 Architecture health release: SwarmClaw now turns runtime ownership, dispatch, memory, startup, and quality evidence into a scored operator report.

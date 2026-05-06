@@ -627,6 +627,7 @@ const COMMAND_GROUPS = [
       cmd('clear-undo', 'POST', '/chats/:id/clear/undo', 'Restore a cleared chat via its undoToken', { expectsJsonBody: true }),
       cmd('compact', 'POST', '/chats/:id/compact', 'Summarize and compact chat history (accepts optional keepLastN)', { expectsJsonBody: true }),
       cmd('context-status', 'GET', '/chats/:id/context-status', 'Report token usage and context-window status for a chat'),
+      cmd('context-pack', 'GET', '/chats/:id/context-pack', 'Get a copyable session context pack for handoff'),
       cmd('browser-status', 'GET', '/chats/:id/browser', 'Check browser status'),
       cmd('browser-close', 'DELETE', '/chats/:id/browser', 'Close browser'),
       cmd('mailbox', 'GET', '/chats/:id/mailbox', 'List chat mailbox envelopes'),
